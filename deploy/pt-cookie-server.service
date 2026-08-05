@@ -1,0 +1,20 @@
+[Unit]
+Description=PT cookie receiver HTTP server (userscript → save)
+After=network.target
+
+[Service]
+Type=simple
+User=kun
+Group=kun
+WorkingDirectory=/home/kun/pt
+ExecStart=/home/kun/miniconda3/envs/pt/bin/python pt_cookie_server.py
+Restart=always
+RestartSec=3
+StandardOutput=append:/home/kun/pt/data/cookie-server.log
+StandardError=append:/home/kun/pt/data/cookie-server.log
+Environment=PYTHONUNBUFFERED=1
+# 仅监听 127.0.0.1, 由 frp 转发; 无外呼, 无需等 clash/network-online
+# 注意: 不要用 ProtectSystem=strict(会挡住 sites/ 目录 cookie 写入)
+
+[Install]
+WantedBy=multi-user.target

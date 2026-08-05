@@ -31,14 +31,14 @@ for _p in (_SITE_DIR, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from common import constants, cookies, env, http
+from common import constants, cookies, env, http, sites
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 BASE_URL = "https://u2.dmhy.org"
 # 原为 CWD 相对路径 "cookies.pkl"，合并后改为脚本目录绝对路径
-COOKIE_FILE = Path(_SITE_DIR) / "cookies.pkl"
+COOKIE_FILE = sites.cookie_path("dmhy") or Path(_SITE_DIR) / "cookies.pkl"
 
 
 # ---------------------------------------------------------------------------

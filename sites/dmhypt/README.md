@@ -27,7 +27,7 @@ python login.py
 |--------|------|------|
 | 1 | Cookie | 检查 `cookies.pkl` 或 `.env` 中 `DMHY_COOKIE`，有效则秒过 |
 | 2 | OCR | 自动下载验证码直到 ddddocr+tesseract 识别一致，**全程无需人工** |
-| 3 | Manual | OCR 失败时降级，浏览器打开 `http://39.101.137.195:8765/captcha.html` 看图输入 |
+| 3 | Manual | OCR 失败时降级，浏览器打开 `http://<公网IP>:8765/captcha.html` 看图输入 |
 
 安全保护：登录页面显示 `剩余 ≤ 2 次尝试` 时**拒绝登录**，防止 IP 被封。
 

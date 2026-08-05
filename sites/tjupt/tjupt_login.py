@@ -16,10 +16,10 @@ for _p in (_SITE_DIR, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from common import cookies, env, http, search
+from common import cookies, env, http, search, sites
 
 BASE_URL = "https://tjupt.org"
-COOKIE_FILE = Path(_SITE_DIR) / "tjupt_cookies.txt"
+COOKIE_FILE = sites.cookie_path("tjupt") or Path(_SITE_DIR) / "tjupt_cookies.txt"
 
 env.load_env()
 USERNAME = env.get("TJPT_USERNAME")

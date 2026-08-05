@@ -81,7 +81,10 @@ def _azusa_search(keyword, limit, page, proxy, force_login, timeout, incldead):
         if p and p.exists():
             cookies.load_netscape(session, p, quiet=True)
             if sites.login_check("azusa", session, timeout):
-                return _azusa_search_with(mod, session, keyword, limit, page, incldead, timeout)
+                try:
+                    return _azusa_search_with(mod, session, keyword, limit, page, incldead, timeout)
+                except RuntimeError:
+                    pass  # cookie 已过期(标题检查误判), 落到下方重新登录
 
     login_session, reason = mod.login(proxy=proxy)
     if login_session is None:

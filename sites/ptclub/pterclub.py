@@ -33,7 +33,7 @@ for _p in (_SITE_DIR, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from common import constants, cookies as cookie_util, env, format as fmt, http
+from common import constants, cookies as cookie_util, env, format as fmt, http, sites
 
 # ── 常量 ──────────────────────────────────────────────────
 BASE_URL      = "https://pterclub.net"
@@ -42,7 +42,7 @@ INDEX_URL     = f"{BASE_URL}/index.php"
 ATTENDANCE_URL = f"{BASE_URL}/attendance-ajax.php"  # 签到 AJAX (GET, 无参数无 CSRF)
 
 SCRIPT_DIR    = Path(__file__).resolve().parent
-COOKIE_FILE   = SCRIPT_DIR / "cookies.json"
+COOKIE_FILE   = sites.cookie_path("ptclub") or SCRIPT_DIR / "cookies.json"
 
 
 # ── 工具函数 ──────────────────────────────────────────────

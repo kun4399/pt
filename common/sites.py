@@ -14,7 +14,7 @@
 import re
 from pathlib import Path
 
-from . import cookies, env, format as fmt, http
+from . import config, cookies, env, format as fmt, http
 
 # 统一搜索结果的字段顺序(dict key 全集)
 UNIFIED_FIELDS = (
@@ -23,9 +23,9 @@ UNIFIED_FIELDS = (
     "uploader", "tags", "promotion", "details_url", "download_url",
 )
 
-# 剩余次数 ≤2 时输出警告且不登录
-ATTEMPTS_WARN = 2
-PREPCHECK_TIMEOUT = 15
+# 剩余次数 ≤N 时输出警告且不登录(可用 .env 的 ATTEMPTS_WARN 调整)
+ATTEMPTS_WARN = config.get_int("ATTEMPTS_WARN", 2)
+PREPCHECK_TIMEOUT = config.get_int("PREPCHECK_TIMEOUT", 15)
 
 # 各站登录页(预检 GET 目标)
 SITES = {
@@ -101,12 +101,20 @@ def resolve_proxy(key: str, override: str = "") -> str:
 
 
 def cookie_path(site_key: str) -> Path | None:
-    """站点 cookie 文件绝对路径;无则返回 None。目录名与 site_key 可不同(azusa→azusapt)。"""
+    """站点 cookie 文件绝对路径;无则返回 None。
+
+    目录由 .env 的 COOKIE_DIR 决定(四站 cookie 统一存放, 相对项目根,
+    子目录用站点目录名如 azusapt);未配置时回退各站点目录(向后兼容)。
+    """
     site = get_site(site_key)
     fname = site.get("cookie_file")
     if not fname:
         return None
-    return Path(__file__).resolve().parent.parent / "sites" / site["dir"] / fname
+    root = Path(__file__).resolve().parent.parent
+    cookie_dir = config.get_str("COOKIE_DIR")
+    if cookie_dir:
+        return root / cookie_dir / site["dir"] / fname
+    return root / "sites" / site["dir"] / fname
 
 
 # ---------------------------------------------------------------------------

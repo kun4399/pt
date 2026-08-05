@@ -31,7 +31,9 @@ if os.path.exists(_tesseract_path):
 
 from tjupt_login import login, BASE_URL
 
-MAX_RETRIES = 10
+from common import config
+
+MAX_RETRIES = config.get_int("TJPT_MAX_RETRIES", 10)
 
 # ── OCR ────────────────────────────────────────────────────────────
 

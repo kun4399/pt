@@ -18,7 +18,7 @@
 统一使用 conda 环境 **`pt`**(Python 3.11),覆盖四个站点全部依赖:
 
 ```bash
-cd /home/kun/pt
+cd ~/pt
 conda env create -f environment.yml      # 或 pip install -r requirements.txt
 ```
 
@@ -37,23 +37,44 @@ conda run -n pt tesseract --list-langs | grep chi_sim   # 中文 OCR 语言包
 
 ## 配置
 
-所有凭据集中在根目录 `.env`(已被 .gitignore 排除):
+**所有用户可修改项集中在一个地方:根目录 `.env`**(已被 .gitignore 排除,模板见 `.env.example`):
 
 ```bash
 cp .env.example .env   # 首次使用
 ```
 
-| 前缀 | 站点 | 说明 |
+### 凭据与网络
+
+| 键 | 说明 |
+|---|---|
+| `AZUSA_USERNAME/PASSWORD/PROXY` | azusa 账号密码与代理(直连 IP 曾封禁,建议走代理) |
+| `TJPT_USERNAME/PASSWORD` | tjupt 账号密码(显式直连,拒绝非中国 IP) |
+| `DMHY_USERNAME/PASSWORD/COOKIE` | dmhy 账号密码与登录 cookie(登录成功自动写回) |
+| `HTTP_PROXY` / `HTTPS_PROXY` | 全局代理(7890, clash);dmhy/ptclub 显式读取;tjupt 直连不受影响 |
+| `DINGTALK_WEBHOOK/SECRET` | 钉钉机器人(签到失败通知,加签安全设置) |
+| `COOKIE_SERVER_TOKEN` | cookie 接收服务鉴权(公网暴露必须,install.sh 自动生成) |
+| `FRP_PUBLIC_IP` | frp 公网服务器地址(油猴发送/验证码访问) |
+
+### 统一可调参数(留空/删除 = 用代码默认值)
+
+| 键 | 默认 | 说明 |
 |---|---|---|
-| `AZUSA_*` | azusa.wiki | 用户名/密码/代理(`AZUSA_PROXY` 默认代理,直连 IP 曾封禁) |
-| `TJPT_*` | tjupt.org | 用户名/密码(显式直连,不走代理——该站拒绝非中国 IP) |
-| `DMHY_*` | u2.dmhy.org | 用户名/密码/登录 cookie(登录成功自动写回 `DMHY_COOKIE`) |
-| `HTTP_PROXY` / `HTTPS_PROXY` | 全局 | 被 dmhy、ptclub 显式读取(`http://127.0.0.1:7890`,clash);tjupt 不受影响(直连) |
+| `HTTP_TIMEOUT` | 30 | HTTP 请求超时秒数(搜索/签到/预检) |
+| `RETRY_MAX` | 3 | 签到失败自动重试次数(登录失效→自动登录重试) |
+| `RETRY_INTERVAL` | 30 | 重试间隔秒 |
+| `ATTEMPTS_WARN` | 2 | 剩余登录次数 ≤N 时警告且不登录 |
+| `PREPCHECK_TIMEOUT` | 15 | 登录前预检超时秒数 |
+| `AZUSA_MAX_ATTEMPTS` | 5 | azusa 单次运行最大登录尝试 |
+| `TJPT_MAX_RETRIES` | 10 | tjupt 海报 OCR 签到最大换题重试 |
+| `DMHY_MIN_ATTEMPTS` | 3 | dmhy 剩余次数 <N 时拒绝登录 |
+| `DMHY_CAPTCHA_PORT` | 8765 | dmhy 验证码服务端口(login.py 手动模式) |
+| `COOKIE_SERVER_HOST/PORT/MAX_BODY` | 127.0.0.1 / 8766 / 1MiB | cookie 接收服务监听地址/端口/body 上限 |
+| `COOKIE_DIR` | `data/cookies` | **四站 cookie 文件统一存放目录**(相对项目根,按站点分目录) |
 
 代理策略(2026-08):tjupt 走直连(TUN 模式下 clash 规则 `GEOIP,CN,DIRECT` 兜底),
 其余站点默认走 7890 代理;azusa 单独读 `AZUSA_PROXY`,dmhy/ptclub 读全局代理。
 
-cookie 文件随各自站点目录存放(格式各不相同,互不复用):
+**cookie 文件统一存放在 `data/cookies/<站点目录>/`**(`COOKIE_DIR` 可改),各站格式不同:
 `azusa_cookies.txt`(Netscape)、`tjupt_cookies.txt`(name=value)、`cookies.pkl`(pickle)、`cookies.json`(浏览器导出)。
 
 ## 快速用法
@@ -115,20 +136,28 @@ cookie 失效(ptclub/dmhy 需手动更新)、签到失败时通过钉钉机器�
 ### 一键安装
 
 ```bash
-cd /home/kun/pt && ./deploy/install.sh        # 一键安装(自动发一条钉钉测试消息)
-./deploy/install.sh --no-test                 # 跳过测试消息
-./deploy/install.sh --dry-run                 # 只预览要执行的命令
+cd ~/pt && ./deploy/install.sh        # 一键安装(自动发一条钉钉测试消息; 路径按实际替换)
+./deploy/install.sh --no-test         # 跳过测试消息
+./deploy/install.sh --dry-run         # 只预览要执行的命令
+```
+
+卸载:
+
+```bash
+./deploy/uninstall.sh                 # 卸载 systemd 服务(保留配置与数据)
+./deploy/uninstall.sh --purge         # 额外删除日志/cookie/油猴副本/frp 穿透
+./deploy/uninstall.sh --dry-run       # 只预览
 ```
 
 脚本自动完成:前置检查 → 钉钉配置检查 → 测试消息 → 预建日志 `data/checkin.log` →
 安装 `pt-checkin.service`/`.timer`(User/Group 自动替换为当前用户)→ 启用 timer。幂等,可重复执行。
 
-### 手动安装(等价步骤)
+### 手动安装(等价步骤, 路径按实际替换)
 
 ```bash
-cd /home/kun/pt
-/home/kun/miniconda3/envs/pt/bin/python pt_checkin.py --notify-test   # 钉钉链路测试
-mkdir -p data && touch data/checkin.log                                # 预建日志(kun 属主)
+cd ~/pt
+~/miniconda3/envs/pt/bin/python pt_checkin.py --notify-test   # 钉钉链路测试
+mkdir -p data && touch data/checkin.log                       # 预建日志
 sudo cp deploy/pt-checkin.service /etc/systemd/system/
 sudo cp deploy/pt-checkin.timer   /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -144,14 +173,62 @@ systemctl list-timers --all | grep pt-checkin  # 确认 timer 生效
 - **开机补跑**: timer 的 `Persistent=true`,重启错过签到时间会自动补跑;服务启动前最多等 3 分钟 clash(7890)就绪
 - **卸载**: `sudo systemctl disable --now pt-checkin.timer && sudo rm /etc/systemd/system/pt-checkin.*`
 
+## 油猴脚本发送 cookie + HTTP 接收服务
+
+浏览器油猴脚本把当前 PT 站 cookie 一键发送到服务器保存(供自动签到使用),服务经 frp 穿透公网可达。
+
+**架构**: 浏览器(油猴) → `http://<公网IP>:8766/api/cookie`(X-Auth-Token) → frpc 隧道 → `pt-cookie-server`(systemd 常驻, 127.0.0.1:8766) → 按站点格式落盘
+(azusa Netscape / tjupt name=value / dmhy pickle + 同步 DMHY_COOKIE / ptclub JSON)。
+
+> 本文档中 `<公网IP>` 均指 frp 服务器的公网地址(本机 install.sh 输出会打印实际值)。
+
+**安装**(`deploy/install.sh` 一键完成, 幂等):
+
+```bash
+cd ~/pt && ./deploy/install.sh
+```
+
+脚本自动:生成 `COOKIE_SERVER_TOKEN`(写入 .env, 公网暴露鉴权必须) → 安装并启用
+`pt-cookie-server.service`(常驻) → `frpc.toml` 追加 pt-cookie 穿透(8766)并重启 frpc → 打印油猴配置。
+
+**油猴脚本安装**:
+
+1. 浏览器装 Tampermonkey → 新建脚本, 内容粘贴 `userscripts/pt-cookie-sender.user.js`
+2. 修改脚本头部两行常量:
+   - `SERVER_URL`(默认已填 `http://<公网IP>:8766/api/cookie`)
+   - `TOKEN` ← 安装脚本结尾输出的 `COOKIE_SERVER_TOKEN` 值(或 `grep COOKIE_SERVER_TOKEN .env`)
+3. 登录四个 PT 站任意一个 → 右下角「🍪 发送 Cookie」按钮 → 成功通知「已保存 N 条 cookie」
+
+**免改版**: 运行 `deploy/install.sh` 会自动生成已填好 SERVER_URL/TOKEN 的
+`userscripts/pt-cookie-sender.configured.user.js`(含 token, 已被 .gitignore 排除),
+浏览器直接安装该文件即可, 无需手动改任何配置。
+
+**服务状态与自测**:
+
+```bash
+systemctl status pt-cookie-server.service        # 常驻服务状态
+tail -30 data/cookie-server.log                  # 接收日志
+curl -s http://127.0.0.1:8766/api/health         # 本地探活
+curl -s http://<公网IP>:8766/api/health    # 公网探活(frp 生效后)
+```
+
+**安全提示**: 服务经公网暴露, `COOKIE_SERVER_TOKEN` 未配置时服务拒绝启动;
+token 内嵌在油猴脚本中, 任何拿到脚本的人可覆盖这 4 个 cookie 文件(可随时轮换
+`.env` 中的 token 并同步脚本);服务默认只绑 127.0.0.1 由 frp 转发;body 上限 1 MiB;
+`GET /api/health` 无鉴权仅暴露 `{"ok":true}`;日志不记录 cookie 值与 token。
+
+**说明**: HttpOnly 的 cookie 无法被 `document.cookie` 读取, 发送时若缺少关键
+cookie(如 tjupt 的 access_token)会收到警告——此时请用浏览器开发者工具或
+GM_cookie 处理, 或回退 `sites/ptclub/pterclub-cookie-exporter.user.js` 剪贴板导出。
+
 ## 定时签到示例 (crontab, 替代方案)
 
 ```bash
-# 每天 08:10 四站统一自动签到(azusa 自动跳过; 退出码 0 = 全部正常)
-10 8 * * * cd /home/kun/pt && /home/kun/miniconda3/envs/pt/bin/python pt_checkin.py >> data/checkin.log 2>&1
+# 每天 08:10 四站统一自动签到(azusa 自动跳过; 退出码 0 = 全部正常; 路径按实际替换)
+10 8 * * * cd ~/pt && ~/miniconda3/envs/pt/bin/python pt_checkin.py >> data/checkin.log 2>&1
 
 # 或仅 tjupt 海报签到(站点禁止自动化, 风险自负)
-3 8 * * * /home/kun/miniconda3/envs/pt/bin/python /home/kun/pt/sites/tjupt/tjupt_sign.py >> /home/kun/pt/sites/tjupt/sign.log 2>&1
+3 8 * * * ~/miniconda3/envs/pt/bin/python ~/pt/sites/tjupt/tjupt_sign.py >> ~/pt/sites/tjupt/sign.log 2>&1
 ```
 
 ## 风控警告(务必阅读)
@@ -169,12 +246,15 @@ systemctl list-timers --all | grep pt-checkin  # 确认 timer 生效
 pt/
 ├── pt_search.py            # 统一入口: 全站搜索 / --site 站内搜索 / --check 预检 / --json
 ├── pt_checkin.py           # 统一签到: 四站自动签到(azusa 自动跳过) / --site / --json
+├── pt_cookie_server.py     # cookie 接收服务启动器(油猴脚本发送的 cookie → 本地保存)
 ├── common/                 # 共享模块 (constants/env/http/cookies/format/search)
 │   ├── sites.py            #   站点注册表 + 登录前预检 + 搜索结果归一化
 │   ├── unified.py          #   四站搜索适配器 + 统一表格/JSON 渲染
 │   ├── checkin.py          #   四站签到适配器 + 签到表格/JSON 渲染 + 预检渲染
-│   └── notify.py           #   钉钉机器人通知(加签 + 发送)
-├── deploy/                 # systemd 单元 (pt-checkin.service + .timer, 安装见 README)
+│   ├── notify.py           #   钉钉机器人通知(加签 + 发送)
+│   └── cookie_server.py    #   HTTP 接收服务(鉴权 + 按站点格式落盘)
+├── userscripts/            # 油猴脚本 (pt-cookie-sender.user.js 四站 cookie 发送)
+├── deploy/                 # systemd 单元 (pt-checkin.service+.timer / pt-cookie-server.service, install.sh 一键安装)
 ├── sites/                  # 四个站点目录(各站独立可运行)
 │   ├── azusapt/  dmhypt/  ptclub/  tjupt/
 ├── data/                   # 历史搜索导出样例 / 签到日志 (checkin.log)

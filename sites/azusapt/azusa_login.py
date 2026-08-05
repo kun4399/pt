@@ -34,7 +34,7 @@ for _p in (_SITE_DIR, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from common import cookies, env, http
+from common import config, cookies, env, http, sites
 
 # ============================================================
 # 配置区
@@ -48,11 +48,11 @@ LOGIN_ACTION = f"{BASE_URL}/takelogin.php"
 CAPTCHA_IMAGE_URL = f"{BASE_URL}/image.php"
 
 # 最大尝试次数 (不要超过8次，否则触发风控)
-MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = config.get_int("AZUSA_MAX_ATTEMPTS", 5)
 
 # 文件路径
 SCRIPT_DIR = Path(__file__).parent
-COOKIE_FILE = SCRIPT_DIR / "azusa_cookies.txt"
+COOKIE_FILE = sites.cookie_path("azusa") or SCRIPT_DIR / "azusa_cookies.txt"
 
 
 # ============================================================

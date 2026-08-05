@@ -19,8 +19,8 @@ conda create -n tjupt python=3.11 -y
 conda install -n pt -c conda-forge tesseract pytesseract pillow requests -y
 
 # 3. 验证安装
-/home/kun/miniconda3/envs/pt/bin/tesseract --list-langs | grep chi_sim
-/home/kun/miniconda3/envs/pt/bin/python -c "import pytesseract, PIL, requests; print('OK')"
+~/miniconda3/envs/pt/bin/tesseract --list-langs | grep chi_sim
+~/miniconda3/envs/pt/bin/python -c "import pytesseract, PIL, requests; print('OK')"
 ```
 
 > **注意**: ARM64 设备 (如 RK3566) 推荐通过 conda 安装 Tesseract。x86_64 设备也可以使用 `sudo apt install tesseract-ocr tesseract-ocr-chi-sim`。
@@ -65,13 +65,13 @@ python3 tjupt_login.py
 
 **运行**:
 ```bash
-/home/kun/miniconda3/envs/pt/bin/python tjupt_sign.py
+~/miniconda3/envs/pt/bin/python tjupt_sign.py
 ```
 
 **定时签到** (crontab):
 ```bash
 # 每天 8:03 自动签到
-3 8 * * * /home/kun/miniconda3/envs/pt/bin/python /home/kun/pt/sites/tjupt/tjupt_sign.py >> /home/kun/pt/sites/tjupt/sign.log 2>&1
+3 8 * * * ~/miniconda3/envs/pt/bin/python ~/pt/sites/tjupt/tjupt_sign.py >> ~/pt/sites/tjupt/sign.log 2>&1
 ```
 
 ## 3. 种子搜索 (`tjupt_search.py`)

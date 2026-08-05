@@ -46,17 +46,17 @@ for _p in (_SITE_DIR, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from common import constants, cookies, env, http
+from common import config, constants, cookies, env, http, sites
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 BASE_URL = "https://u2.dmhy.org"
 # 原为 CWD 相对路径 "cookies.pkl"，合并后改为脚本目录绝对路径
-COOKIE_FILE = Path(_SITE_DIR) / "cookies.pkl"
-CAPTCHA_PORT = 8765
-FRP_PUBLIC_IP = "39.101.137.195"
-MIN_ATTEMPTS = 3  # refuse login if ≤ this many remaining
+COOKIE_FILE = sites.cookie_path("dmhy") or Path(_SITE_DIR) / "cookies.pkl"
+CAPTCHA_PORT = config.get_int("DMHY_CAPTCHA_PORT", 8765)
+FRP_PUBLIC_IP = config.get_str("FRP_PUBLIC_IP", "39.101.137.195")
+MIN_ATTEMPTS = config.get_int("DMHY_MIN_ATTEMPTS", 3)  # refuse login if ≤ this many remaining
 
 # ---------------------------------------------------------------------------
 # Config

@@ -27,7 +27,7 @@ for _p in (_ROOT,):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from common import checkin, env, sites, unified
+from common import checkin, config, env, sites, unified
 
 
 # ---------------------------------------------------------------------------
@@ -56,13 +56,16 @@ def parse_args():
                    help="本地 cookie 有效也强制重新登录(有风控风险, 勿用于定时任务)")
     p.add_argument("--verbose", "-v", action="store_true",
                    help="表格输出下打印详情/下载链接")
-    p.add_argument("--timeout", type=int, default=30, help="HTTP 超时秒数 (默认 30)")
+    p.add_argument("--timeout", type=int, default=None,
+                   help="HTTP 超时秒数 (默认读 .env HTTP_TIMEOUT, 缺省 30)")
     return p.parse_args()
 
 
 def main() -> int:
     env.load_env()
     args = parse_args()
+    if args.timeout is None:
+        args.timeout = config.get_int("HTTP_TIMEOUT", 30)
 
     keys = [k.strip() for k in args.site.split(",") if k.strip()] or sites.site_keys()
     for k in keys:

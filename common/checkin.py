@@ -16,7 +16,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from . import sites
+from . import config, sites
 from .unified import _load_module, _pad, _dw, _cut
 
 STATUS_OK = "ok"                    # 签到成功
@@ -153,16 +153,21 @@ def _ptclub_checkin(proxy, timeout):
 RETRYABLE_STATUSES = (STATUS_LOGIN_FAILED, STATUS_FAILED, STATUS_NETWORK_ERROR)
 
 
-def checkin_with_retry(site_key: str, *, max_retries: int = 3, interval: float = 30.0,
-                       **kw) -> tuple:
+def checkin_with_retry(site_key: str, *, max_retries: int | None = None,
+                       interval: float | None = None, **kw) -> tuple:
     """带重试的单站签到。返回 (最终 report, 总尝试次数 attempts)。
 
     初试失败且 status ∈ RETRYABLE_STATUSES 时重试, 最多 max_retries 次
     (总尝试 ≤ max_retries+1), 每次 sleep(interval) 后重新调 checkin_site()。
+    max_retries/interval 缺省读 .env(RETRY_MAX/RETRY_INTERVAL)。
     重试后仍失败时 report["detail"] 追加 "(重试 N 次)" 标注。
     注意: 预检剩余次数 ≤2 的站不应调用本函数(风控保护, 见 pt_checkin.py 编排)。
     """
     import time
+    if max_retries is None:
+        max_retries = config.get_int("RETRY_MAX", 3)
+    if interval is None:
+        interval = config.get_float("RETRY_INTERVAL", 30.0)
     r = checkin_site(site_key, **kw)
     attempts = 1
     while (not r["ok"] and r["status"] in RETRYABLE_STATUSES

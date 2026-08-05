@@ -26,7 +26,7 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from common import checkin, env, notify, sites
+from common import checkin, config, env, notify, sites
 
 
 def parse_args():
@@ -44,7 +44,8 @@ def parse_args():
                    help="表格输出下打印 detail")
     p.add_argument("--proxy", default="", help="代理覆盖, 如 http://127.0.0.1:7890 "
                                                "(默认读 .env; tjupt 恒直连)")
-    p.add_argument("--timeout", type=int, default=30, help="HTTP 超时秒数 (默认 30)")
+    p.add_argument("--timeout", type=int, default=None,
+                   help="HTTP 超时秒数 (默认读 .env HTTP_TIMEOUT, 缺省 30)")
     p.add_argument("--notify", action="store_true",
                    help="签到后: 失败的站重试(最多 3 次)仍失败, 或 cookie 失效, "
                         "通过钉钉机器人通知(需 .env 配置 DINGTALK_WEBHOOK/SECRET)")
@@ -56,6 +57,8 @@ def parse_args():
 def main() -> int:
     env.load_env()
     args = parse_args()
+    if args.timeout is None:
+        args.timeout = config.get_int("HTTP_TIMEOUT", 30)
 
     # --notify-test: 只发测试消息验证加签, 不签到
     if args.notify_test:

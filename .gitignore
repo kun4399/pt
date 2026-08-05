@@ -1,14 +1,21 @@
 # 凭据与敏感文件
 .env
 
-# Cookie 与缓存
+# Cookie(统一存放于 data/cookies/, 迁移后旧路径规则保留防残留)
+data/cookies/
 *.pkl
 sites/*/cookies.json
 sites/*/azusa_cookies.txt
 sites/*/tjupt_cookies.txt
+
+# 运行时产物(搜索导出 / 日志)
+data/search_*.json
 sites/*/search_*.json
 *.log
 
 # Python
 __pycache__/
 *.pyc
+
+# 油猴已配置副本(含 token, 由 deploy/install.sh 生成)
+pt-cookie-sender.configured.user.js

@@ -44,4 +44,8 @@ pt-checkin-site:
 pt-checkin-json:
 	$(PY) pt_checkin.py --json
 
+# cookie 接收服务 (油猴脚本发送 cookie 的 HTTP 服务)
+cookie-server:
+	$(PY) pt_cookie_server.py
+
 # 示例: make azusa-search KW="汉化" / make pt-search KW="4K" / make pt-checkin

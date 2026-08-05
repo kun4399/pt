@@ -49,8 +49,8 @@ def load_netscape(session: requests.Session, path, quiet: bool = False) -> bool:
         return False
 
 
-def save_netscape(session: requests.Session, path) -> None:
-    """保存 cookies 到 Netscape 格式文件。"""
+def save_netscape(session: requests.Session, path, quiet: bool = False) -> None:
+    """保存 cookies 到 Netscape 格式文件。quiet=True 时不打印(服务端用)。"""
     p = Path(path)
     with open(p, "w") as f:
         for cookie in session.cookies:
@@ -58,19 +58,21 @@ def save_netscape(session: requests.Session, path) -> None:
                     f"{'TRUE' if cookie.secure else 'FALSE'}\t"
                     f"{cookie.expires if cookie.expires else 0}\t"
                     f"{cookie.name}\t{cookie.value}\n")
-    print(f"Cookie 已保存到: {p}")
+    if not quiet:
+        print(f"Cookie 已保存到: {p}")
 
 
 # ---- name=value 单行格式 (tjupt) ----
 
-def save_key_value(session: requests.Session, path) -> int:
-    """以 name=value 每行一条写出 cookies,返回条数。"""
+def save_key_value(session: requests.Session, path, quiet: bool = False) -> int:
+    """以 name=value 每行一条写出 cookies,返回条数。quiet=True 时不打印(服务端用)。"""
     p = Path(path)
     with open(p, "w") as f:
         for cookie in session.cookies:
             f.write(f"{cookie.name}={cookie.value}\n")
     n = len(session.cookies)
-    print(f"  ✓ 已保存 {n} 条 cookies → {p}")
+    if not quiet:
+        print(f"  ✓ 已保存 {n} 条 cookies → {p}")
     return n
 
 

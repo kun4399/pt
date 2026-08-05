@@ -88,7 +88,7 @@ run touch "$LOG_FILE"
 ok "日志文件: $LOG_FILE"
 
 # ---- 5. 安装 systemd 单元(Unit 的 User/Group 替换为当前用户) ----
-say "安装 systemd 单元 (需要 sudo 密码)"
+say "安装签到单元 (需要 sudo 密码)"
 run sudo cp "$SCRIPT_DIR/$SERVICE" /etc/systemd/system/ && \
 run sudo sed -i "s/^User=.*/User=$(id -un)/; s/^Group=.*/Group=$(id -gn)/" "/etc/systemd/system/$SERVICE"
 run sudo cp "$SCRIPT_DIR/$TIMER" /etc/systemd/system/
@@ -96,10 +96,81 @@ run sudo systemctl daemon-reload
 run sudo systemctl enable --now "$TIMER"
 ok "已安装并启用 $TIMER (每天 08:10 自动签到, 开机自启, Persistent 开机补跑)"
 
-# ---- 6. 完成 ----
+# ---- 6. cookie 接收服务 ----
+# 6.1 COOKIE_SERVER_TOKEN(未配置才生成, 幂等)
+ENV_FILE="$PROJECT_ROOT/.env"
+if grep -q "^COOKIE_SERVER_TOKEN=." "$ENV_FILE" 2>/dev/null; then
+    COOKIE_TOKEN="$(grep '^COOKIE_SERVER_TOKEN=' "$ENV_FILE" | head -1 | cut -d= -f2)"
+else
+    say "生成 COOKIE_SERVER_TOKEN (写入 .env)"
+    COOKIE_TOKEN="$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)"
+    printf '\n# ---- cookie 接收服务(油猴脚本 → 服务器, 公网暴露必须) ----\nCOOKIE_SERVER_TOKEN=%s\n' "$COOKIE_TOKEN" >> "$ENV_FILE"
+    ok "已生成 COOKIE_SERVER_TOKEN"
+fi
+
+# 6.2 预建 cookie-server.log
+say "预建 cookie-server 日志文件"
+run touch "$PROJECT_ROOT/data/cookie-server.log"
+ok "日志文件: $PROJECT_ROOT/data/cookie-server.log"
+
+# 6.3 安装 pt-cookie-server.service
+say "安装 cookie 接收服务单元 (常驻监听 127.0.0.1:8766)"
+run sudo cp "$SCRIPT_DIR/pt-cookie-server.service" /etc/systemd/system/ && \
+run sudo sed -i "s/^User=.*/User=$(id -un)/; s/^Group=.*/Group=$(id -gn)/" "/etc/systemd/system/pt-cookie-server.service"
+run sudo systemctl daemon-reload
+run sudo systemctl enable --now pt-cookie-server.service
+ok "已安装并启用 pt-cookie-server.service (常驻, Restart=always)"
+
+# 6.4 frpc.toml 追加 pt-cookie 穿透(幂等)
+FRPC_TOML="${FRPC_TOML:-/home/kun/frp/frpc.toml}"
+if [ -f "$FRPC_TOML" ]; then
+    if grep -q 'name = "pt-cookie"' "$FRPC_TOML"; then
+        ok "frpc.toml 已含 pt-cookie 穿透"
+    else
+        say "追加 frp 穿透到 $FRPC_TOML"
+        cat >> "$FRPC_TOML" <<EOF
+
+[[proxies]]
+name = "pt-cookie"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8766
+remotePort = 8766
+EOF
+        run sudo systemctl restart frpc
+        ok "frp 穿透已添加并重启 frpc (公网入口见下方油猴配置)"
+    fi
+else
+    warn "未找到 $FRPC_TOML, 跳过 frp 配置 (可稍后手动追加 pt-cookie 穿透)"
+fi
+
+# ---- 7. 生成油猴脚本已配置副本(填好 SERVER_URL/TOKEN, 直接安装即可) ----
+FRP_IP="$(grep '^FRP_PUBLIC_IP=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2)"
+COOKIE_PORT="$(grep '^COOKIE_SERVER_PORT=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2)"
+FRP_IP="${FRP_IP:-39.101.137.195}"
+COOKIE_PORT="${COOKIE_PORT:-8766}"
+SERVER_URL="http://${FRP_IP}:${COOKIE_PORT}/api/cookie"
+US_TPL="$PROJECT_ROOT/userscripts/pt-cookie-sender.user.js"
+US_DIST="$PROJECT_ROOT/userscripts/pt-cookie-sender.configured.user.js"
+if [ -f "$US_TPL" ]; then
+    say "生成油猴脚本已配置副本"
+    sed "s|^const SERVER_URL = .*|const SERVER_URL = '${SERVER_URL}';|; \
+         s|^const TOKEN = .*|const TOKEN = '${COOKIE_TOKEN}';|" "$US_TPL" > "$US_DIST"
+    ok "已生成: userscripts/pt-cookie-sender.configured.user.js (浏览器直接安装此文件)"
+fi
+
+# ---- 8. 完成 ----
 say "安装完成"
-echo "  查看定时器: systemctl list-timers --all | grep pt-checkin"
+echo "  签到定时器: systemctl list-timers --all | grep pt-checkin"
 echo "  手动签到:   sudo systemctl start pt-checkin.service"
-echo "  查看日志:   tail -30 $PROJECT_ROOT/data/checkin.log"
+echo "  签到日志:   tail -30 $PROJECT_ROOT/data/checkin.log"
+echo "  cookie 服务: sudo systemctl status pt-cookie-server.service"
+echo "  cookie 日志: tail -30 $PROJECT_ROOT/data/cookie-server.log"
 echo "  通知测试:   $PYTHON $PROJECT_ROOT/pt_checkin.py --notify-test"
+echo ""
+say "油猴脚本(推荐直接安装已配置副本, 无需手动改):"
+echo "  $US_DIST"
+echo "  (模板: userscripts/pt-cookie-sender.user.js, 需手动填 TOKEN)"
+echo "  SERVER_URL: $SERVER_URL"
+echo "  TOKEN:      $COOKIE_TOKEN"
 echo "  卸载:       sudo systemctl disable --now pt-checkin.timer && sudo rm /etc/systemd/system/pt-checkin.*"
