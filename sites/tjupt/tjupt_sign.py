@@ -382,12 +382,10 @@ def sign(session=None, verbose=True) -> dict:
             log("✗ 答案未被接受，换题重试...")
             continue
 
-        # 未知响应 - 保存以便调试
-        log("? 响应未识别，保存到 /tmp/tjupt_sign_response.html")
-        with open("/tmp/tjupt_sign_response.html", "w") as f:
-            f.write(resp_text)
+        # 未知响应
+        log("? 响应未识别")
         return {"success": False, "already": False,
-                "message": "响应未识别 (已保存到 /tmp/tjupt_sign_response.html)",
+                "message": "响应未识别, 请手动签到",
                 "attempts": attempt, "detail": ""}
 
     log(f"\n{'=' * 50}")

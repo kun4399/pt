@@ -27,10 +27,9 @@ pip install requests beautifulsoup4 lxml
 ### 方法 1：油猴脚本（推荐）
 
 1. 浏览器安装 [Tampermonkey](https://www.tampermonkey.net/) 扩展
-2. 导入本项目中的 `pterclub-cookie-exporter.user.js`
+2. 用油猴脚本 `userscripts/pt-cookie-sender.user.js` 一键发送(推荐), 或手动放置 cookies.json 到 `data/cookies/ptclub/`
 3. 打开 https://pterclub.net 并登录
 4. 点击页面右下角 `🍪 Export` 按钮
-5. Cookie 已复制到剪贴板，保存到项目目录下的 `cookies.json`
 
 ### 方法 2：手动导出
 
@@ -101,7 +100,6 @@ python3 pterclub.py search "movie" --json
 ```
 ptclub/
 ├── pterclub.py                          # 主脚本
-├── pterclub-cookie-exporter.user.js     # 油猴脚本（浏览器导入）
 ├── cookies.json                         # Cookie 持久化文件
 └── README.md
 ```

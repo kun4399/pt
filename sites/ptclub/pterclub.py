@@ -410,8 +410,8 @@ def main():
     if args.cmd == "search":
         cookies = load_cookies()
         if not cookies:
-            print("No cookie file found. Export cookies from browser first.")
-            print(f"See: {SCRIPT_DIR / 'export_cookies.js'}")
+            print("No cookie file found.")
+            print("用油猴脚本一键发送: userscripts/pt-cookie-sender.user.js, 或手动放置 cookies.json 到 data/cookies/ptclub/")
             sys.exit(1)
 
         print(f"\n  Searching: [{args.keyword}]")

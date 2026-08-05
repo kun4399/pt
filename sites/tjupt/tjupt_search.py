@@ -6,7 +6,6 @@ TJUPT 种子搜索脚本
 用法:
     python3 tjupt_search.py "关键字"
     python3 tjupt_search.py "关键字" --cat 401 --sort seeders
-    python3 tjupt_search.py "关键字" --download 1
 """
 
 import argparse
@@ -243,29 +242,6 @@ def search(keyword="", categories=None, search_area="title", search_mode="and",
     }
 
 
-def download_torrent(tid, save_path=None, session=None) -> tuple:
-    if session is None:
-        session = login(verbose=False)
-        if not session:
-            return False, "登录失败"
-    try:
-        resp = session.get(f"{BASE_URL}/download.php?id={tid}", timeout=30)
-    except requests.RequestException as e:
-        return False, str(e)
-    if resp.status_code != 200 or "<html" in resp.text[:200].lower():
-        return False, f"下载失败 (HTTP {resp.status_code})"
-
-    cd = resp.headers.get("Content-Disposition", "")
-    fn_m = re.search(r'filename[^;=\n]*=["\']?([^"\'\n;]+)', cd)
-    filename = fn_m.group(1) if fn_m else f"tjupt_{tid}.torrent"
-    if save_path is None:
-        save_path = os.path.join(os.getcwd(), filename)
-    elif os.path.isdir(save_path):
-        save_path = os.path.join(save_path, filename)
-    with open(save_path, "wb") as f:
-        f.write(resp.content)
-    return True, save_path
-
 # ── CLI ─────────────────────────────────────────────────────────────
 
 def fmt_size(size, unit):
@@ -319,7 +295,6 @@ def main():
   %(prog)s "2160p" --cat 401         搜索电影分类
   %(prog)s "test" --sort seeders      按做种数排序
   %(prog)s "test" --page 2           第3页
-  %(prog)s "test" --download 1       下载第1个种子
 
 分类: 401=电影 402=剧集 403=综艺 404=资料 405=动漫
       406=音乐 407=体育 408=软件 409=游戏 410=其他
@@ -333,9 +308,7 @@ def main():
     p.add_argument("--order", choices=["asc", "desc"], default="desc")
     p.add_argument("--page", type=int, default=0)
     p.add_argument("--incldead", type=int, choices=[0, 1, 2], default=0)
-    p.add_argument("--download", type=int, metavar="N", help="下载第N个结果")
     p.add_argument("--output", choices=["table", "simple"], default="table")
-    p.add_argument("--dl-dir", help="下载目录")
     args = p.parse_args()
 
     print("登录中...", end=" ", flush=True)
@@ -354,17 +327,6 @@ def main():
         session=session,
     )
     print("✓")
-
-    if args.download is not None:
-        results = data.get("results", [])
-        if args.download < 1 or args.download > len(results):
-            print(f"✗ 无效序号 (共 {len(results)} 条)")
-            sys.exit(1)
-        t = results[args.download - 1]
-        print(f"\n下载: {t['title'][:80]}")
-        ok, result = download_torrent(t["id"], args.dl_dir, session)
-        print(f"{'✓' if ok else '✗'} {result}")
-        return
 
     print_results(data, args.output)
 

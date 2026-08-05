@@ -4,8 +4,7 @@
 /api/cookie, 服务按站点格式落盘:
   azusa → azusa_cookies.txt (Netscape 7 列)
   tjupt → tjupt_cookies.txt (name=value 每行)
-  dmhy  → cookies.pkl (pickle RequestsCookieJar, 与现有 load_pickle 兼容;
-          含 nexusphp_u2 时同步写回 .env 的 DMHY_COOKIE)
+  dmhy  → cookies.pkl (pickle RequestsCookieJar, 与现有 load_pickle 兼容)
   ptclub→ cookies.json ({"cookies":[...]}, 与浏览器导出格式一致)
 
 安全(公网经 frp 暴露, 必须):
@@ -111,9 +110,6 @@ def save_site_cookies(site: str, cookies_list: list) -> dict:
         cookie_util.save_key_value(s, path, quiet=True)
     elif site == "dmhy":
         cookie_util.save_pickle(s, path)
-        u2 = next((c["value"] for c in cookies_list if c.get("name") == "nexusphp_u2"), None)
-        if u2:
-            env.write_env_value("DMHY_COOKIE", u2)   # 与 login.py 登录成功写回一致
     elif site == "ptclub":
         with open(path, "w") as f:
             json.dump({"saved_at": datetime.now(timezone.utc).isoformat(),

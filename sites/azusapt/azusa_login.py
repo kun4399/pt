@@ -326,9 +326,6 @@ def login(proxy=None):
             print(f"  验证码错误，2秒后重试... (剩余 {MAX_ATTEMPTS - attempt} 次)")
             time.sleep(2)
         else:
-            debug_file = SCRIPT_DIR / f"login_debug_{attempt}.html"
-            debug_file.write_text(resp.text, encoding="utf-8")
-            print(f"  调试页面已保存: {debug_file}")
             print("  3秒后重试...")
             time.sleep(3)
 
@@ -677,12 +674,6 @@ def print_search_results(search_data, concise=False):
             print(f"      下载: {t.get('download_url', 'N/A')}")
 
     print(f"\n{'─' * 100}")
-
-    # JSON 输出提示
-    json_file = SCRIPT_DIR / f"search_{keyword}.json"
-    with open(json_file, "w", encoding="utf-8") as f:
-        json.dump(search_data, f, ensure_ascii=False, indent=2, default=str)
-    print(f"完整结果已保存到: {json_file}")
     print(f"共 {len(results)} 条记录")
 
 

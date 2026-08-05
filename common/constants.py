@@ -2,7 +2,7 @@
 
 来源: azusapt/azusa_login.py L55-61, tjupt/tjupt_login.py L19-21,
        dmhypt/login.py L90, dmhypt/dmhy.py L66, ptclub/pterclub.py L75-76,
-       azusapt/check_ban.py L11-12
+       azusa_login.py L27-31
 """
 
 # azusa_login / tjupt_login (Chrome/120, X11)
@@ -21,12 +21,6 @@ UA_CHROME_WIN = (
 UA_CHROME_X11_131 = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-)
-
-# check_ban.py (Chrome/126, Windows)
-UA_CHROME_WIN_126 = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 
 # azusa_login 默认 header 集

@@ -21,22 +21,16 @@ pip install ddddocr pytesseract pillow
 python login.py
 ```
 
-自动选择最佳登录方式：
+OCR 自动登录(cookie-first):
 
-| 优先级 | 方式 | 说明 |
-|--------|------|------|
-| 1 | Cookie | 检查 `cookies.pkl` 或 `.env` 中 `DMHY_COOKIE`，有效则秒过 |
-| 2 | OCR | 自动下载验证码直到 ddddocr+tesseract 识别一致，**全程无需人工** |
-| 3 | Manual | OCR 失败时降级，浏览器打开 `http://<公网IP>:8765/captcha.html` 看图输入 |
+1. 已保存的 `cookies.pkl` 有效则直接通过(无需重新登录)
+2. 失效则 OCR 模式: 自动下载验证码直到 ddddocr+tesseract 识别一致后提交一次,**全程无需人工**
+3. 登录成功 → 保存 `cookies.pkl`,`dmhy.py`/统一入口直接复用
 
-安全保护：登录页面显示 `剩余 ≤ 2 次尝试` 时**拒绝登录**，防止 IP 被封。
-
-登录成功后 session 保存到 `cookies.pkl`，`dmhy.py` 直接复用，无需重复登录。
+安全保护: 登录页面显示 `剩余 ≤ N 次尝试`(`.env ATTEMPTS_WARN`, 默认 2)时**拒绝登录**, 防止 IP 被封。
 
 ```bash
-python login.py                      # 自动模式
-python login.py --cookie VALUE       # 浏览器拿的 cookie，验证后写入配置
-python login.py --manual             # 强制 manual 模式
+python login.py                      # cookie 有效则跳过, 否则 OCR 登录
 python login.py -v                   # 详细日志
 ```
 
@@ -80,15 +74,14 @@ python dmhy.py -v search "关键词"         # 详细日志
 ```env
 DMHY_USERNAME=your_email@example.com
 DMHY_PASSWORD=your_password
-DMHY_COOKIE=                          # 可选快捷(仅本 login.py 用); 统一入口读 cookies.pkl
 HTTP_PROXY=http://127.0.0.1:20170
 HTTPS_PROXY=http://127.0.0.1:20170
 ```
 
-成功登录后 `DMHY_COOKIE` 和 `cookies.pkl` 自动更新。
+成功登录后 `cookies.pkl` 自动更新。
 > 四站统一的手动 cookie 方式见根 README「配置」节: 文件放 `data/cookies/` 或油猴一键发送。
 
 ## 依赖
 
 python=3.11, requests, beautifulsoup4, lxml, python-dotenv
-ddddocr, pytesseract, pillow（OCR 可选）
+ddddocr, pytesseract, pillow（OCR 登录必需）

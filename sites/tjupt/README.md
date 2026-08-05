@@ -33,7 +33,6 @@ tjupt/
 ├── tjupt_login.py         # 登录模块
 ├── tjupt_sign.py          # 自动签到 (OCR 识别电影海报)
 ├── tjupt_search.py        # 种子搜索
-├── tjupt_diagnose.py      # 登录诊断工具 (开发用)
 └── tjupt_cookies.txt      # Cookie 存储文件
 ```
 
@@ -76,7 +75,7 @@ python3 tjupt_login.py
 
 ## 3. 种子搜索 (`tjupt_search.py`)
 
-搜索 TJUPT 种子资源，支持分类过滤、排序、分页、在线下载。
+搜索 TJUPT 种子资源，支持分类过滤、排序、分页。
 
 ### 基本用法
 
@@ -95,8 +94,6 @@ python3 tjupt_search.py "test" --sort size --order asc  # 按文件大小升序
 # 分页 (每页 100 条)
 python3 tjupt_search.py "test" --page 2                # 第 3 页
 
-# 下载种子
-python3 tjupt_search.py "星际穿越" --download 1 --dl-dir /tmp
 
 # 简洁输出格式
 python3 tjupt_search.py "1080p" --output simple
@@ -114,8 +111,6 @@ python3 tjupt_search.py "1080p" --output simple
 | `--order` | 排序顺序 | asc, desc |
 | `--page` | 页码 (0-based) | 整数 |
 | `--incldead` | 断种过滤 | 0=全部, 1=仅活种, 2=仅断种 |
-| `--download N` | 下载第 N 个结果 | 整数 |
-| `--dl-dir` | 下载目录 | 路径 |
 | `--output` | 输出格式 | table, simple |
 
 ### 分类 ID

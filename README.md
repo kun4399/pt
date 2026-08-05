@@ -1,13 +1,13 @@
 # PT 站自动化工具集
 
-四个 PT 站(均为 NexusPHP 内核)的登录 / 签到 / 搜索 / 下载脚本统一项目。
+四个 PT 站(均为 NexusPHP 内核)的登录 / 签到 / 搜索脚本统一项目。
 
 | 站点 | URL | 脚本 | 功能 |
 |---|---|---|---|
 | azusa.wiki | https://azusa.wiki | `sites/azusapt/azusa_login.py` | 登录(ddddocr 验证码)+ 种子搜索 + 封禁诊断(签到系统已官方下线) |
-| u2.dmhy.org | https://u2.dmhy.org | `sites/dmhypt/login.py`, `dmhy.py` | 登录(3 模式降级)+ 签到(作品名验证码)+ 搜索 |
+| u2.dmhy.org | https://u2.dmhy.org | `sites/dmhypt/login.py`, `dmhy.py` | OCR 自动登录 + 签到(作品名验证码)+ 搜索 |
 | pterclub.net | https://pterclub.net | `sites/ptclub/pterclub.py` | 种子搜索 + 签到(attendance-ajax.php)+ cookie 有效性检查 |
-| tjupt.org | https://tjupt.org | `sites/tjupt/tjupt_login.py`, `tjupt_sign.py`, `tjupt_search.py` | 登录 + 海报 OCR 签到 + 搜索/下载 |
+| tjupt.org | https://tjupt.org | `sites/tjupt/tjupt_login.py`, `tjupt_sign.py`, `tjupt_search.py` | 登录 + 海报 OCR 签到 + 搜索 |
 
 **统一入口**: `pt_search.py`(一次搜索全部四站,统一表格输出,含站点来源)与 `pt_checkin.py`(一次签到全部四站,azusa 自动跳过,见下文"快速用法")。
 
@@ -49,11 +49,11 @@ cp .env.example .env   # 首次使用
 |---|---|
 | `AZUSA_USERNAME/PASSWORD/PROXY` | azusa 账号密码与代理(直连 IP 曾封禁,建议走代理) |
 | `TJPT_USERNAME/PASSWORD` | tjupt 账号密码(显式直连,拒绝非中国 IP) |
-| `DMHY_USERNAME/PASSWORD/COOKIE` | dmhy 账号密码与登录 cookie(登录成功自动写回) |
+| `DMHY_USERNAME/PASSWORD` | dmhy 账号密码(OCR 自动登录, cookie 统一存 data/cookies/) |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 全局代理(7890, clash);dmhy/ptclub 显式读取;tjupt 直连不受影响 |
 | `DINGTALK_WEBHOOK/SECRET` | 钉钉机器人(签到失败通知,加签安全设置) |
 | `COOKIE_SERVER_TOKEN` | cookie 接收服务鉴权(公网暴露必须,install.sh 自动生成) |
-| `FRP_PUBLIC_IP` | frp 公网服务器地址(油猴发送/验证码访问) |
+| `FRP_PUBLIC_IP` | frp 公网服务器地址(油猴 cookie 发送) |
 
 ### 统一可调参数(留空/删除 = 用代码默认值)
 
@@ -66,8 +66,6 @@ cp .env.example .env   # 首次使用
 | `PREPCHECK_TIMEOUT` | 15 | 登录前预检超时秒数 |
 | `AZUSA_MAX_ATTEMPTS` | 5 | azusa 单次运行最大登录尝试 |
 | `TJPT_MAX_RETRIES` | 10 | tjupt 海报 OCR 签到最大换题重试 |
-| `DMHY_MIN_ATTEMPTS` | 3 | dmhy 剩余次数 <N 时拒绝登录 |
-| `DMHY_CAPTCHA_PORT` | 8765 | dmhy 验证码服务端口(login.py 手动模式) |
 | `COOKIE_SERVER_HOST/PORT/MAX_BODY` | 127.0.0.1 / 8766 / 1MiB | cookie 接收服务监听地址/端口/body 上限 |
 | `COOKIE_DIR` | `data/cookies` | **四站 cookie 文件统一存放目录**(相对项目根,按站点分目录) |
 
@@ -79,9 +77,7 @@ cp .env.example .env   # 首次使用
 
 **四站统一支持手动 cookie 登录**(跳过账号密码):把对应站的 cookie 文件放进
 `data/cookies/<站点目录>/`,或登录网站后用油猴脚本(`userscripts/`)一键发送保存,
-统一入口搜索/签到会自动优先使用(见上文"油猴脚本发送 cookie")。
-`DMHY_COOKIE`(.env)仅为 dmhy 交互登录脚本 `login.py` 的可选快捷配置(单 cookie),
-与统一入口无关——四站的手动 cookie 机制完全一致。
+统一入口搜索/签到会自动优先使用(见上文"油猴脚本发送 cookie")。四站机制完全一致。
 
 ## 快速用法
 
@@ -117,7 +113,7 @@ conda run -n pt python sites/tjupt/tjupt_sign.py
 # tjupt 搜索
 conda run -n pt python sites/tjupt/tjupt_search.py "星际穿越" --cat 401
 
-# u2.dmhy.org —— 登录(自动选 cookie/OCR/手动模式)、签到、搜索
+# u2.dmhy.org —— OCR 自动登录、签到、搜索
 conda run -n pt python sites/dmhypt/login.py
 conda run -n pt python sites/dmhypt/dmhy.py checkin
 conda run -n pt python sites/dmhypt/dmhy.py search "4K"
@@ -184,7 +180,7 @@ systemctl list-timers --all | grep pt-checkin  # 确认 timer 生效
 浏览器油猴脚本把当前 PT 站 cookie 一键发送到服务器保存(供自动签到使用),服务经 frp 穿透公网可达。
 
 **架构**: 浏览器(油猴) → `http://<公网IP>:8766/api/cookie`(X-Auth-Token) → frpc 隧道 → `pt-cookie-server`(systemd 常驻, 127.0.0.1:8766) → 按站点格式落盘
-(azusa Netscape / tjupt name=value / dmhy pickle + 同步 DMHY_COOKIE / ptclub JSON)。
+(azusa Netscape / tjupt name=value / dmhy pickle / ptclub JSON)。
 
 > 本文档中 `<公网IP>` 均指 frp 服务器的公网地址(本机 install.sh 输出会打印实际值)。
 
@@ -196,6 +192,9 @@ cd ~/pt && ./deploy/install.sh
 
 脚本自动:生成 `COOKIE_SERVER_TOKEN`(写入 .env, 公网暴露鉴权必须) → 安装并启用
 `pt-cookie-server.service`(常驻) → `frpc.toml` 追加 pt-cookie 穿透(8766)并重启 frpc → 打印油猴配置。
+
+> 旧功能清理提示: 若 frpc.toml 中仍有 `dmhy-captcha`(8765)穿透块, 该功能已移除,
+> 可手动删除该块并 `sudo systemctl restart frpc`(不影响 pt-cookie 8766)。
 
 **油猴脚本安装**:
 
@@ -225,7 +224,7 @@ token 内嵌在油猴脚本中, 任何拿到脚本的人可覆盖这 4 个 cooki
 
 **说明**: HttpOnly 的 cookie 无法被 `document.cookie` 读取, 发送时若缺少关键
 cookie(如 tjupt 的 access_token)会收到警告——此时请用浏览器开发者工具或
-GM_cookie 处理, 或回退 `sites/ptclub/pterclub-cookie-exporter.user.js` 剪贴板导出。
+GM_cookie 处理(或手动放置 cookie 文件到 `data/cookies/<站点>/`)。
 
 ## 定时签到示例 (crontab, 替代方案)
 
@@ -242,7 +241,7 @@ GM_cookie 处理, 或回退 `sites/ptclub/pterclub-cookie-exporter.user.js` 剪�
 - **azusa.wiki**: 直连 IP 曾被触发登录超限封禁(8 天+)。真实登录/搜索必须走 `AZUSA_PROXY`,且代理出口 IP 同样受"剩余尝试次数"保护,频繁触发会连累代理 IP。统一入口默认 cookie-first(本地 cookie 有效时不登录,避免每次登录消耗次数);`--force-login` 有风控风险,**勿用于定时任务**。**签到系统已官方下线**(attendance.php 无表单,页面"签到成功"为反爬诱饵),统一签到自动跳过。
 - **tjupt.org**: 有"异地登录保护",更换网络/IP 后登录会被拒绝(脚本会打印当前 IP)。该保护无法通过 GET 登录页预检(仅在提交登录后出现),统一入口登录失败会明确提示"需在常用网络/IP 下登录"。**站点规则明确禁止自动化签到**,风险自负;OCR 识别失败会换题重试(最多 10 次)。
 - **u2.dmhy.org**: 登录页有剩余尝试次数计数,脚本在 ≤2 次时拒绝登录以防封 IP;优先使用 cookie 模式(统一入口不做自动登录, cookie 失效时提示先运行 `sites/dmhypt/login.py`)。签到为作品名验证码,属站点禁止的自动化行为,风险自负。
-- **pterclub.net**: 站点有 Cloudflare Turnstile,脚本不做自动化登录——用浏览器登录后通过油猴脚本 `sites/ptclub/pterclub-cookie-exporter.user.js` 导出 cookie 存为 `sites/ptclub/cookies.json`。签到为 GET `attendance-ajax.php`(无参数,仅 cookie+Referer)。
+- **pterclub.net**: 站点有 Cloudflare Turnstile,脚本不做自动化登录——用浏览器登录后通过油猴脚本 `userscripts/pt-cookie-sender.user.js` 一键发送 cookie 到服务器。签到为 GET `attendance-ajax.php`(无参数,仅 cookie+Referer)。
 
 统一入口的登录前预检(`pt_search.py --check` / `pt_checkin.py --check`):先检测网络能否访问登录页 → 再检测剩余登录次数(≤2 输出警告不登录)→ 最后检测本地 cookie 登录态。tjupt 无次数机制显示 N/A;ptclub 预检即 cookie 有效性检查。统一签到(`pt_checkin.py`)对每站先预检再签到,单站失败不影响其他站。
 
