@@ -1,0 +1,18 @@
+name: pt
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - requests>=2.31
+  - beautifulsoup4>=4.12
+  - lxml>=4.9
+  - python-dotenv>=1.0
+  - pillow>=10.0
+  - pytesseract>=0.3.10
+  - tesseract>=5.3
+  - pip:
+      - ddddocr>=1.5.6
+      - onnxruntime>=1.14
+      - rich>=13.0

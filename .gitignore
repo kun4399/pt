@@ -1,0 +1,14 @@
+# 凭据与敏感文件
+.env
+
+# Cookie 与缓存
+*.pkl
+sites/*/cookies.json
+sites/*/azusa_cookies.txt
+sites/*/tjupt_cookies.txt
+sites/*/search_*.json
+*.log
+
+# Python
+__pycache__/
+*.pyc

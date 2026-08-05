@@ -1,0 +1,93 @@
+# u2.dmhy.org 自动登录 + 签到 + 搜索
+
+## 环境
+
+```bash
+conda env create -f ../../environment.yml
+conda activate pt
+cp ../../.env.example ../../.env
+# 编辑 .env 填入账号密码
+```
+
+OCR 模式需要额外安装（可选）：
+
+```bash
+pip install ddddocr pytesseract pillow
+```
+
+## 登录
+
+```bash
+python login.py
+```
+
+自动选择最佳登录方式：
+
+| 优先级 | 方式 | 说明 |
+|--------|------|------|
+| 1 | Cookie | 检查 `cookies.pkl` 或 `.env` 中 `DMHY_COOKIE`，有效则秒过 |
+| 2 | OCR | 自动下载验证码直到 ddddocr+tesseract 识别一致，**全程无需人工** |
+| 3 | Manual | OCR 失败时降级，浏览器打开 `http://39.101.137.195:8765/captcha.html` 看图输入 |
+
+安全保护：登录页面显示 `剩余 ≤ 2 次尝试` 时**拒绝登录**，防止 IP 被封。
+
+登录成功后 session 保存到 `cookies.pkl`，`dmhy.py` 直接复用，无需重复登录。
+
+```bash
+python login.py                      # 自动模式
+python login.py --cookie VALUE       # 浏览器拿的 cookie，验证后写入配置
+python login.py --manual             # 强制 manual 模式
+python login.py -v                   # 详细日志
+```
+
+## 签到
+
+```bash
+python dmhy.py checkin               # 默认留言 "一切随缘~"
+python dmhy.py checkin -m "新的一天"  # 自定义留言（≥5字符）
+python dmhy.py -v checkin            # 详细日志
+```
+
+随机选择一个作品名称提交。答对得 9~59 UCoin，答错仍算签到成功（得 1 UCoin）。已签到时会自动跳过。
+
+## 搜索
+
+```bash
+python dmhy.py search "鬼灭之刃"          # 关键字搜索
+python dmhy.py search "关键词" -n 10      # 最多返回10条
+python dmhy.py -v search "关键词"         # 详细日志
+```
+
+返回 JSON，每条结果包含：
+
+| 字段 | 说明 |
+|------|------|
+| `category` | 作品类型（BDMV, BDRip, DVDISO, ...） |
+| `title` | 标题 |
+| `subtitle` | 副标题 / 促销说明 |
+| `size` | 种子大小 |
+| `survival` | 生存时间 |
+| `seeders` | 种子数 |
+| `leechers` | 下载中 |
+| `completed` | 已完成下载 |
+| `rating` | 评分 |
+| `comments` | 评论数 |
+| `details_url` | 详情页链接 |
+| `download_url` | 种子下载直链（`.torrent` 文件） |
+
+## 配置 (.env)
+
+```env
+DMHY_USERNAME=your_email@example.com
+DMHY_PASSWORD=your_password
+DMHY_COOKIE=                          # 填入后跳过所有登录流程
+HTTP_PROXY=http://127.0.0.1:20170
+HTTPS_PROXY=http://127.0.0.1:20170
+```
+
+成功登录后 `DMHY_COOKIE` 和 `cookies.pkl` 自动更新。
+
+## 依赖
+
+python=3.11, requests, beautifulsoup4, lxml, python-dotenv
+ddddocr, pytesseract, pillow（OCR 可选）

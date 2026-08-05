@@ -1,0 +1,13 @@
+# 四个 PT 站统一依赖(pip 安装方式)
+# 注意: tesseract 为二进制引擎, pip 装不了, 需 conda/apt 另行安装
+#   conda: conda install -c conda-forge tesseract
+#   apt:   sudo apt install tesseract-ocr tesseract-ocr-chi-sim
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=4.9
+python-dotenv>=1.0
+Pillow>=10.0
+pytesseract>=0.3.10
+ddddocr>=1.5.6
+onnxruntime>=1.14
+rich>=13.0
