@@ -77,6 +77,12 @@ cp .env.example .env   # 首次使用
 **cookie 文件统一存放在 `data/cookies/<站点目录>/`**(`COOKIE_DIR` 可改),各站格式不同:
 `azusa_cookies.txt`(Netscape)、`tjupt_cookies.txt`(name=value)、`cookies.pkl`(pickle)、`cookies.json`(浏览器导出)。
 
+**四站统一支持手动 cookie 登录**(跳过账号密码):把对应站的 cookie 文件放进
+`data/cookies/<站点目录>/`,或登录网站后用油猴脚本(`userscripts/`)一键发送保存,
+统一入口搜索/签到会自动优先使用(见上文"油猴脚本发送 cookie")。
+`DMHY_COOKIE`(.env)仅为 dmhy 交互登录脚本 `login.py` 的可选快捷配置(单 cookie),
+与统一入口无关——四站的手动 cookie 机制完全一致。
+
 ## 快速用法
 
 **统一入口(推荐)**:搜索默认全部四站,统一表格输出(含站点来源列);签到默认四站全签:

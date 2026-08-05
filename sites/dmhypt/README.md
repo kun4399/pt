@@ -80,12 +80,13 @@ python dmhy.py -v search "关键词"         # 详细日志
 ```env
 DMHY_USERNAME=your_email@example.com
 DMHY_PASSWORD=your_password
-DMHY_COOKIE=                          # 填入后跳过所有登录流程
+DMHY_COOKIE=                          # 可选快捷(仅本 login.py 用); 统一入口读 cookies.pkl
 HTTP_PROXY=http://127.0.0.1:20170
 HTTPS_PROXY=http://127.0.0.1:20170
 ```
 
 成功登录后 `DMHY_COOKIE` 和 `cookies.pkl` 自动更新。
+> 四站统一的手动 cookie 方式见根 README「配置」节: 文件放 `data/cookies/` 或油猴一键发送。
 
 ## 依赖
 
