@@ -18,11 +18,15 @@ log = logging.getLogger("pt.common.cookies")
 
 # ---- Netscape 格式 (azusa) ----
 
-def load_netscape(session: requests.Session, path) -> bool:
-    """从 Netscape 7 列格式文件加载 cookies 到 session。返回是否加载成功。"""
+def load_netscape(session: requests.Session, path, quiet: bool = False) -> bool:
+    """从 Netscape 7 列格式文件加载 cookies 到 session。返回是否加载成功。
+
+    quiet=True 时不打印(统一入口 pt_search 复用,避免污染表格输出)。
+    """
     p = Path(path)
     if not p.exists():
-        print(f"Cookie 文件不存在: {p}")
+        if not quiet:
+            print(f"Cookie 文件不存在: {p}")
         return False
 
     try:
@@ -36,10 +40,12 @@ def load_netscape(session: requests.Session, path) -> bool:
                         domain=parts[0], path=parts[2],
                     )
                     count += 1
-        print(f"已加载 {count} 个 cookie: {p}")
+        if not quiet:
+            print(f"已加载 {count} 个 cookie: {p}")
         return count > 0
     except Exception as e:
-        print(f"Cookie 加载失败: {e}")
+        if not quiet:
+            print(f"Cookie 加载失败: {e}")
         return False
 
 
@@ -66,6 +72,27 @@ def save_key_value(session: requests.Session, path) -> int:
     n = len(session.cookies)
     print(f"  ✓ 已保存 {n} 条 cookies → {p}")
     return n
+
+
+def load_key_value(session: requests.Session, path, domain: str) -> int:
+    """读取 name=value 每行一条的 cookie 文件(与 save_key_value 对称)。
+
+    name=value 格式不含 domain/path 信息,域必须由调用方显式传入
+    (如 tjupt 的 "tjupt.org")。返回加载条数。
+    """
+    p = Path(path)
+    if not p.exists():
+        return 0
+    count = 0
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        if name and value:
+            session.cookies.set(name, value, domain=domain, path="/")
+            count += 1
+    return count
 
 
 # ---- pickle 格式 (dmhy) ----

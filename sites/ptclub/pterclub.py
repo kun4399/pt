@@ -33,7 +33,7 @@ for _p in (_SITE_DIR, _ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from common import constants, cookies as cookie_util, format as fmt, http
+from common import constants, cookies as cookie_util, env, format as fmt, http
 
 # ── 常量 ──────────────────────────────────────────────────
 BASE_URL      = "https://pterclub.net"
@@ -57,18 +57,22 @@ def load_cookies() -> list[dict] | None:
     return cookie_util.load_browser_json(COOKIE_FILE)
 
 
-def create_session() -> requests.Session:
-    """带浏览器 cookie 的会话(UA 见 common.constants)。"""
-    session = http.make_session(ua=constants.UA_CHROME_X11_131)
+def create_session(proxy: str = "") -> requests.Session:
+    """带浏览器 cookie 的会话(UA 见 common.constants)。
+
+    proxy: 显式代理(如 http://127.0.0.1:7890);空串时不读环境变量
+    (make_session 的 trust_env=False),即直连。
+    """
+    session = http.make_session(proxy=proxy, ua=constants.UA_CHROME_X11_131)
     cookies = load_cookies()
     if cookies:
         cookie_util.inject_browser_cookies(session, cookies)
     return session
 
 
-def check_login() -> bool:
+def check_login(proxy: str = "") -> bool:
     """检查 cookie 是否有效 (页面含未登录 → False; 含 usercp.php/控制面板 → True)。"""
-    return http.is_logged_in(create_session(), INDEX_URL,
+    return http.is_logged_in(create_session(proxy), INDEX_URL,
                              fail_keywords=("未登录",),
                              success_keywords=("usercp.php", "控制面板"),
                              timeout=15)
@@ -185,11 +189,11 @@ def parse_torrent_row(cells, passkey: str = "") -> dict | None:
     }
 
 
-def search(query: str, max_results: int = 50) -> list[dict]:
+def search(query: str, max_results: int = 50, proxy: str = "") -> list[dict]:
     """搜索种子，返回结构化结果"""
     from bs4 import BeautifulSoup
 
-    session = create_session()
+    session = create_session(proxy)
 
     # 先从任意页面获取 passkey（在下载链接中）
     passkey = ""
@@ -298,8 +302,12 @@ def main():
   %(prog)s search "BluRay" -n 20   # 最多 20 条
   %(prog)s search "movie" --json   # JSON 输出
   %(prog)s check                   # 检查 Cookie 有效性
+  %(prog)s --proxy http://127.0.0.1:7890 check   # 走代理(默认读 .env 全局代理)
         """,
     )
+    parser.add_argument("--proxy", type=str, default=None,
+                        help="HTTP 代理,如 http://127.0.0.1:7890"
+                             "(默认读取 .env 的 HTTP_PROXY/HTTPS_PROXY)")
     sub = parser.add_subparsers(dest="cmd", help="命令")
 
     # search
@@ -320,6 +328,11 @@ def main():
         parser.print_help()
         return
 
+    env.load_env()
+    proxy = args.proxy if args.proxy is not None else env.get_proxy()
+    if proxy:
+        print(f"[代理] {proxy}")
+
     if args.cmd == "check":
         cookies = load_cookies()
         if not cookies:
@@ -327,7 +340,7 @@ def main():
             print(f"Place exported cookies at: {COOKIE_FILE}")
             sys.exit(1)
         print(f"Loaded {len(cookies)} cookie(s)")
-        if check_login():
+        if check_login(proxy):
             print("[OK] Cookie is valid!")
         else:
             print("[FAIL] Cookie expired or invalid")
@@ -340,7 +353,7 @@ def main():
             print("No cookie file found")
             sys.exit(1)
         # TODO: 需要确定 #do-attendance 的 data-url（仅在未签到时可见）
-        session = create_session()
+        session = create_session(proxy)
         resp = session.get(f"{BASE_URL}/index.php", timeout=15)
         m = re.search(r'attendance-wrap[^>]*>([^<]+)', resp.text)
         if m:
@@ -357,7 +370,7 @@ def main():
             sys.exit(1)
 
         print(f"\n  Searching: [{args.keyword}]")
-        results = search(args.keyword, max_results=args.limit)
+        results = search(args.keyword, max_results=args.limit, proxy=proxy)
         print_results(results, args.keyword, json_fmt=args.json)
 
 

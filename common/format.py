@@ -1,4 +1,4 @@
-"""展示层格式化工具(原样取自 ptclub/pterclub.py L39-60)。"""
+"""展示层格式化工具(原样取自 ptclub/pterclub.py L39-60;join_size 为统一入口新增)。"""
 
 import re
 
@@ -33,3 +33,20 @@ def human_time(t) -> str:
     if m:
         return f"{m.group(1)}分"
     return t
+
+
+def join_size(value, unit) -> str:
+    """数值 + 单位 → "373.44 MB"(统一入口的 size 字段格式)。
+
+    兼容 float("373.44")+("MB") 与字符串("373.44 MB")两种输入;
+    解析失败时原样返回 str(value)。
+    """
+    if value is None or value == "":
+        return str(unit or "")
+    if unit:
+        try:
+            return f"{float(value):,.2f} {unit}"
+        except (TypeError, ValueError):
+            return f"{value} {unit}"
+    # 无单位: 原样返回(可能已是 "373.44 MB" 字符串)
+    return str(value)
