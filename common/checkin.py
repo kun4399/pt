@@ -145,6 +145,57 @@ def _ptclub_checkin(proxy, timeout):
 
 
 # ---------------------------------------------------------------------------
+# 失败重试与通知文案 (pt_checkin.py --notify 用)
+# ---------------------------------------------------------------------------
+
+# 可重试状态: 登录失败/签到失败/网络错误(cookie_invalid 不重试——
+# ptclub/dmhy 无自动登录通道, 重试无意义, 直接通知用户手动处理)
+RETRYABLE_STATUSES = (STATUS_LOGIN_FAILED, STATUS_FAILED, STATUS_NETWORK_ERROR)
+
+
+def checkin_with_retry(site_key: str, *, max_retries: int = 3, interval: float = 30.0,
+                       **kw) -> tuple:
+    """带重试的单站签到。返回 (最终 report, 总尝试次数 attempts)。
+
+    初试失败且 status ∈ RETRYABLE_STATUSES 时重试, 最多 max_retries 次
+    (总尝试 ≤ max_retries+1), 每次 sleep(interval) 后重新调 checkin_site()。
+    重试后仍失败时 report["detail"] 追加 "(重试 N 次)" 标注。
+    注意: 预检剩余次数 ≤2 的站不应调用本函数(风控保护, 见 pt_checkin.py 编排)。
+    """
+    import time
+    r = checkin_site(site_key, **kw)
+    attempts = 1
+    while (not r["ok"] and r["status"] in RETRYABLE_STATUSES
+           and attempts <= max_retries):
+        time.sleep(interval)
+        r = checkin_site(site_key, **kw)
+        attempts += 1
+    if attempts > 1 and not r["ok"]:
+        r = dict(r)
+        r["detail"] = (f"{r.get('detail', '')} (重试 {attempts - 1} 次)").strip()
+    return r, attempts
+
+
+def build_failure_text(failures: list, *, total: int, now=None) -> str:
+    """失败站点列表 → 钉钉文本消息。cookie_invalid 附"需手动更新 cookie"提示。"""
+    from datetime import datetime as _dt
+    now = now or _dt.now()
+    lines = [f"【PT 签到失败】{now:%Y-%m-%d %H:%M}",
+             f"共 {total} 站, 失败 {len(failures)} 站", ""]
+    for r in failures:
+        lines.append(f"■ {r['site_name']} ({r['site']})")
+        lines.append(f"  状态: {STATUS_LABEL.get(r['status'], r['status'])}")
+        if r.get("message"):
+            lines.append(f"  原因: {r['message']}")
+        if r.get("detail"):
+            lines.append(f"  细节: {r['detail']}")
+        if r["status"] == STATUS_COOKIE_INVALID:
+            lines.append("  → 需手动更新 cookie")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+# ---------------------------------------------------------------------------
 # 全站签到
 # ---------------------------------------------------------------------------
 

@@ -105,7 +105,46 @@ conda run -n pt python sites/ptclub/pterclub.py search "4K" -n 5
 
 每个站点的详细用法、参数表、cookie 刷新方式见 `sites/<站>/README.md`。
 
-## 定时签到示例 (crontab)
+## systemd 定时签到 + 钉钉通知(推荐)
+
+每天 08:10 自动四站签到,日志写 `data/checkin.log`;登录失效(自动登录重试 3 次仍失败)、
+cookie 失效(ptclub/dmhy 需手动更新)、签到失败时通过钉钉机器人通知。
+
+前置:`.env` 已配置 `DINGTALK_WEBHOOK` / `DINGTALK_SECRET`(自定义机器人"加签"安全设置)。
+
+### 一键安装
+
+```bash
+cd /home/kun/pt && ./deploy/install.sh        # 一键安装(自动发一条钉钉测试消息)
+./deploy/install.sh --no-test                 # 跳过测试消息
+./deploy/install.sh --dry-run                 # 只预览要执行的命令
+```
+
+脚本自动完成:前置检查 → 钉钉配置检查 → 测试消息 → 预建日志 `data/checkin.log` →
+安装 `pt-checkin.service`/`.timer`(User/Group 自动替换为当前用户)→ 启用 timer。幂等,可重复执行。
+
+### 手动安装(等价步骤)
+
+```bash
+cd /home/kun/pt
+/home/kun/miniconda3/envs/pt/bin/python pt_checkin.py --notify-test   # 钉钉链路测试
+mkdir -p data && touch data/checkin.log                                # 预建日志(kun 属主)
+sudo cp deploy/pt-checkin.service /etc/systemd/system/
+sudo cp deploy/pt-checkin.timer   /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now pt-checkin.timer
+sudo systemctl start pt-checkin.service        # 手动触发一次真实签到
+systemctl list-timers --all | grep pt-checkin  # 确认 timer 生效
+```
+
+- **通知条件**: 签到失败 / 登录失效且自动登录重试 3 次仍失败 / cookie 失效(ptclub/dmhy 无法自动登录, 提示手动更新)→ 钉钉消息;全部成功不通知
+- **手动测试通知**: `python pt_checkin.py --notify-test`(发一条测试消息);`python pt_checkin.py --notify` 手动跑一次带通知的签到
+- **日志**: `data/checkin.log`(systemd append 写入);日志增长可用 `truncate -s 0 data/checkin.log` 清空
+- **状态**: 失败日 `sudo systemctl status pt-checkin.service` 显示 failed 为预期(此时已发钉钉通知),timer 下次照常触发
+- **开机补跑**: timer 的 `Persistent=true`,重启错过签到时间会自动补跑;服务启动前最多等 3 分钟 clash(7890)就绪
+- **卸载**: `sudo systemctl disable --now pt-checkin.timer && sudo rm /etc/systemd/system/pt-checkin.*`
+
+## 定时签到示例 (crontab, 替代方案)
 
 ```bash
 # 每天 08:10 四站统一自动签到(azusa 自动跳过; 退出码 0 = 全部正常)
@@ -133,10 +172,12 @@ pt/
 ├── common/                 # 共享模块 (constants/env/http/cookies/format/search)
 │   ├── sites.py            #   站点注册表 + 登录前预检 + 搜索结果归一化
 │   ├── unified.py          #   四站搜索适配器 + 统一表格/JSON 渲染
-│   └── checkin.py          #   四站签到适配器 + 签到表格/JSON 渲染 + 预检渲染
+│   ├── checkin.py          #   四站签到适配器 + 签到表格/JSON 渲染 + 预检渲染
+│   └── notify.py           #   钉钉机器人通知(加签 + 发送)
+├── deploy/                 # systemd 单元 (pt-checkin.service + .timer, 安装见 README)
 ├── sites/                  # 四个站点目录(各站独立可运行)
 │   ├── azusapt/  dmhypt/  ptclub/  tjupt/
-├── data/                   # 历史搜索导出样例
+├── data/                   # 历史搜索导出样例 / 签到日志 (checkin.log)
 ├── .env / .env.example     # 统一凭据配置
 ├── environment.yml         # conda 环境定义 (name: pt)
 ├── requirements.txt        # pip 依赖清单

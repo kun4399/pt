@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily PT Check-in Timer (08:10)
+Requires=pt-checkin.service
+
+[Timer]
+# 每天 08:10 自动签到(避开整点, 与 README crontab 示例一致)
+OnCalendar=*-*-* 08:10:00
+# 开机时若错过签到时间(如关机/重启), 启动后立即补跑一次
+Persistent=true
+
+[Install]
+WantedBy=timers.target

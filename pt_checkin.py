@@ -26,7 +26,7 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from common import checkin, env, sites
+from common import checkin, env, notify, sites
 
 
 def parse_args():
@@ -45,12 +45,24 @@ def parse_args():
     p.add_argument("--proxy", default="", help="代理覆盖, 如 http://127.0.0.1:7890 "
                                                "(默认读 .env; tjupt 恒直连)")
     p.add_argument("--timeout", type=int, default=30, help="HTTP 超时秒数 (默认 30)")
+    p.add_argument("--notify", action="store_true",
+                   help="签到后: 失败的站重试(最多 3 次)仍失败, 或 cookie 失效, "
+                        "通过钉钉机器人通知(需 .env 配置 DINGTALK_WEBHOOK/SECRET)")
+    p.add_argument("--notify-test", action="store_true",
+                   help="发送一条钉钉测试消息验证加签配置, 不签到")
     return p.parse_args()
 
 
 def main() -> int:
     env.load_env()
     args = parse_args()
+
+    # --notify-test: 只发测试消息验证加签, 不签到
+    if args.notify_test:
+        ok = notify.send_dingtalk(
+            f"【PT 签到通知测试】钉钉机器人加签配置验证成功 ({env.get('TJPT_USERNAME') or ''})")
+        print(f"钉钉通知: {'已发送' if ok else '发送失败'}")
+        return 0 if ok else 1
 
     keys = [k.strip() for k in args.site.split(",") if k.strip()] or sites.site_keys()
     for k in keys:
@@ -67,12 +79,31 @@ def main() -> int:
         return 1 if warned else 0
 
     # 逐站签到(单站失败不中断其他站)
-    reports = checkin.checkin_all(keys=keys, proxy=args.proxy, timeout=args.timeout)
+    reports = []
+    for k in keys:
+        kw = {"proxy": args.proxy, "timeout": args.timeout}
+        if args.notify and prechecks[k].get("warning"):
+            # 剩余次数 ≤2: 风控保护, 不重试(重试可能消耗登录次数)
+            reports.append(checkin.checkin_site(k, **kw))
+        elif args.notify:
+            r, _n = checkin.checkin_with_retry(k, **kw)
+            reports.append(r)
+        else:
+            reports.append(checkin.checkin_site(k, **kw))
 
     if args.json:
         print(checkin.render_json(reports, prechecks))
     else:
         print(checkin.render_table(reports, prechecks, verbose=args.verbose))
+
+    # --notify: 失败的站(含重试后仍失败/cookie 失效)→ 钉钉通知
+    if args.notify:
+        failures = [r for r in reports if not r["ok"]]
+        if failures:
+            text = checkin.build_failure_text(failures, total=len(reports))
+            sent = notify.send_dingtalk(text)
+            print(f"钉钉通知: {'已发送' if sent else '发送失败'} ({len(failures)} 站失败)")
+        # 全部成功: 不发通知, 保持日志干净
 
     # 退出码: 全部 ok(成功/已签到/跳过)为 0, 方便 cron 判断
     return 0 if all(r["ok"] for r in reports) else 1

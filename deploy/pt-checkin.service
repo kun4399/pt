@@ -1,0 +1,22 @@
+[Unit]
+Description=PT Daily Auto Check-in (azusa/tjupt/dmhy/ptclub)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=kun
+Group=kun
+WorkingDirectory=/home/kun/pt
+# clash(mihomo)由 /etc/rc.local 启动, 与 network-online.target 无严格先后顺序:
+# 最多等 3 分钟 7890 端口就绪(fail-open, 超时仍继续, 由站内重试+钉钉通知兜底)
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 90); do (echo >/dev/tcp/127.0.0.1/7890) >/dev/null 2>&1 && exit 0; sleep 2; done; exit 0'
+ExecStart=/home/kun/miniconda3/envs/pt/bin/python pt_checkin.py --notify
+StandardOutput=append:/home/kun/pt/data/checkin.log
+StandardError=append:/home/kun/pt/data/checkin.log
+Environment=PYTHONUNBUFFERED=1
+# oneshot 默认 90s 超时; 最坏路径(4 站 × 重试 3 次 × 30s 间隔 + tjupt OCR)远超此值
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target
