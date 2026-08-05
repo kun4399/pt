@@ -21,59 +21,13 @@
 import argparse
 import os
 import sys
-from datetime import datetime
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
 for _p in (_ROOT,):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from common import env, sites, unified
-
-
-# ---------------------------------------------------------------------------
-# 预检渲染
-# ---------------------------------------------------------------------------
-
-def render_precheck(prechecks: dict, keys: list) -> str:
-    """登录前预检表格: 可达性 / HTTP / 剩余次数 / 状态。"""
-    lines = []
-    lines.append(f"=== PT 站登录前预检 ({datetime.now():%Y-%m-%d %H:%M}) ===")
-    headers = [("站点", 8), ("可达", 5), ("HTTP", 5), ("剩余次数", 9), ("状态", 0)]
-    head = "".join(unified._pad(h, w) for h, w in headers[:-1]) + headers[-1][0]
-    lines.append(head)
-    lines.append("-" * min(80, unified._dw(head)))
-
-    for key in keys:
-        r = prechecks[key]
-        reachable = "OK" if r["reachable"] else "✗"
-        status_http = str(r["http_status"]) if r["http_status"] else "-"
-        if r["attempts_remaining"] is None:
-            attempts = "N/A"
-        elif r["attempts_total"]:
-            attempts = f"{r['attempts_remaining']}/{r['attempts_total']}"
-        else:
-            attempts = str(r["attempts_remaining"])
-
-        if not r["reachable"]:
-            status = f"不可达 ({r['error']})"
-        elif r["blocked"]:
-            status = f"[封禁] {r['detail']}"
-        elif r["warning"]:
-            status = f"[警告] 仅剩 {r['attempts_remaining']} 次, 不执行登录"
-        elif r["logged_in"] is True:
-            status = "已登录 (本地 cookie 有效)"
-        elif r["logged_in"] is False:
-            status = "未登录 (cookie 失效)"
-        elif key == "tjupt":
-            status = "ok (无次数机制; 异地登录保护无法预检)"
-        else:
-            status = "ok"
-
-        lines.append(unified._pad(key, 8) + unified._pad(reachable, 5)
-                     + unified._pad(status_http, 5) + unified._pad(attempts, 9)
-                     + status)
-    return "\n".join(lines)
+from common import checkin, env, sites, unified
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +73,7 @@ def main() -> int:
     # --check: 只做登录前预检
     if args.check:
         prechecks = sites.precheck_all(args.timeout)
-        print(render_precheck(prechecks, keys))
+        print(checkin.render_precheck(prechecks, keys))
         warned = [k for k in keys if prechecks[k]["warning"] or not prechecks[k]["reachable"]]
         return 1 if warned else 0
 

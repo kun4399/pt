@@ -65,8 +65,8 @@ def preprocess_image(img: Image.Image) -> list:
     return variants
 
 
-def ocr_poster(session: requests.Session, poster_url: str) -> str:
-    """下载海报图片并执行 OCR，返回识别文字。"""
+def ocr_poster(session: requests.Session, poster_url: str, verbose: bool = True) -> str:
+    """下载海报图片并执行 OCR，返回识别文字。verbose=False 时抑制异常打印。"""
     resp = session.get(poster_url, timeout=15)
     img = Image.open(io.BytesIO(resp.content))
 
@@ -84,7 +84,8 @@ def ocr_poster(session: requests.Session, poster_url: str) -> str:
                 if text.strip():
                     all_texts.append(text.strip())
             except Exception as e:
-                print(f"    OCR ({variant_name}/PSM{psm}) 出错: {e}")
+                if verbose:
+                    print(f"    OCR ({variant_name}/PSM{psm}) 出错: {e}")
 
     combined = "\n".join(all_texts)
     return combined
@@ -180,11 +181,11 @@ def get_attendance_page(session: requests.Session) -> dict:
 
     # 已签到检测: 没有 ban_robot 表单 → 可能已签到
     if "ban_robot" not in html:
-        # 确认是否有已签到消息
+        # 确认是否有已签到消息 (re.S: 文本可能被 HTML 标签分隔)
         if "今日已签到" in html:
             detail = re.search(
                 r'已累计签到\s*(\d+)\s*次.*?已连续签到\s*(\d+)\s*天.*?获得了\s*(\d+)\s*个?\s*魔力值',
-                html
+                html, re.S
             )
             if detail:
                 return {"status": "already_signed", "poster_url": None, "options": [],
@@ -234,142 +235,179 @@ def submit_answer(session: requests.Session, option_value: str) -> requests.Resp
 
 # ── 主流程 ──────────────────────────────────────────────────────────
 
-def main():
-    print("=" * 50)
-    print("TJUPT 自动签到")
-    print("=" * 50)
+def sign(session=None, verbose=True) -> dict:
+    """海报 OCR 签到(自动换题重试, 最多 MAX_RETRIES 次)。
+
+    session: 已登录的 requests.Session(统一入口传入);None 时内部 login() 登录。
+    verbose=False 时抑制全部过程打印(统一入口用), 仅返回结果 dict。
+
+    返回 {"success", "already", "message", "attempts", "detail"}:
+      already=True → 今日已签到(message 含累计/连续/魔力值)
+      success=False → 失败原因(message)
+    """
+    def log(*args, **kw):
+        if verbose:
+            print(*args, **kw)
 
     # ── 登录 ──
-    print("\n[登录]")
-    session = login(verbose=True)
-    if not session:
-        print("✗ 登录失败，退出")
-        sys.exit(1)
+    if session is None:
+        log("\n[登录]")
+        session = login(verbose=verbose)
+        if not session:
+            return {"success": False, "already": False, "message": "登录失败",
+                    "attempts": 0, "detail": "login() 返回 None (可能异地登录保护)"}
 
     # ── 签到循环 ──
     for attempt in range(1, MAX_RETRIES + 1):
-        print(f"\n{'─' * 30}")
-        print(f"[签到] 第 {attempt}/{MAX_RETRIES} 次尝试")
+        log(f"\n{'─' * 30}")
+        log(f"[签到] 第 {attempt}/{MAX_RETRIES} 次尝试")
 
         # 获取签到页
         result = get_attendance_page(session)
 
         if result["status"] == "already_signed":
-            print(f"  ✓ {result['message']}")
-            return
+            log(f"  ✓ {result['message']}")
+            return {"success": True, "already": True, "message": result["message"],
+                    "attempts": attempt, "detail": ""}
 
         if result["status"] == "error":
-            print(f"  ✗ {result['message']}")
+            log(f"  ✗ {result['message']}")
             if "登录已过期" in result["message"]:
-                print("  重新登录...")
-                session = login(verbose=True)
+                log("  重新登录...")
+                session = login(verbose=verbose)
                 if not session:
-                    print("  ✗ 重新登录失败")
-                    sys.exit(1)
+                    return {"success": False, "already": False,
+                            "message": "重新登录失败", "attempts": attempt,
+                            "detail": result["message"]}
                 continue
-            return
+            return {"success": False, "already": False,
+                    "message": result["message"], "attempts": attempt, "detail": ""}
 
         poster_url = result["poster_url"]
         options = result["options"]
 
-        print(f"  海报: ...{poster_url[-40:]}")
-        print(f"  选项 ({len(options)} 个):")
+        log(f"  海报: ...{poster_url[-40:]}")
+        log(f"  选项 ({len(options)} 个):")
         for i, (v, label) in enumerate(options):
-            print(f"    [{i+1}] {label}")
+            log(f"    [{i+1}] {label}")
 
         # OCR 识别
-        print(f"  OCR 识别中...", end=" ", flush=True)
+        log(f"  OCR 识别中...", end=" ", flush=True)
         try:
-            ocr_text = ocr_poster(session, poster_url)
+            ocr_text = ocr_poster(session, poster_url, verbose=verbose)
         except Exception as e:
-            print(f"\n  ✗ OCR 异常: {e}")
-            print("  换题重试...")
+            log(f"\n  ✗ OCR 异常: {e}")
+            log("  换题重试...")
             continue
 
         if ocr_text:
             # 截断显示
             display = ocr_text[:150].replace("\n", " / ")
-            print(f"\"{display}{'...' if len(ocr_text) > 150 else ''}\"")
+            log(f"\"{display}{'...' if len(ocr_text) > 150 else ''}\"")
         else:
-            print("(无文字)")
-            print("  ~ OCR 无结果，换题重试...")
+            log("(无文字)")
+            log("  ~ OCR 无结果，换题重试...")
             continue
 
         # 匹配
         best_match, all_scores = match_option(ocr_text, options)
 
-        print(f"  匹配:")
+        log(f"  匹配:")
         for v, label, score in all_scores:
             bar = "█" * int(score * 20)
             marker = " ★" if best_match and v == best_match[0] else ""
-            print(f"    {label:20s} {bar:20s} {score:.0%}{marker}")
+            log(f"    {label:20s} {bar:20s} {score:.0%}{marker}")
 
-        if best_match:
-            value, label, score = best_match
-            print(f"\n  → 选中: \"{label}\" (置信度 {score:.0%})")
-            print(f"  提交中...", end=" ", flush=True)
+        if not best_match:
+            log(f"  ~ 无可靠匹配 (最高 {all_scores[0][1]}: {all_scores[0][2]:.0%})")
+            log("  换题重试...")
+            continue
 
-            try:
-                resp = submit_answer(session, value)
-            except requests.RequestException as e:
-                print(f"\n  ✗ 提交失败: {e}")
-                continue
+        value, label, score = best_match
+        log(f"\n  → 选中: \"{label}\" (置信度 {score:.0%})")
+        log(f"  提交中...", end=" ", flush=True)
 
-            # 检查结果
-            resp_text = resp.text
+        try:
+            resp = submit_answer(session, value)
+        except requests.RequestException as e:
+            log(f"\n  ✗ 提交失败: {e}")
+            continue
 
-            # 成功: "今日获得了 X 个魔力值"
-            success_match = re.search(
-                r'(?:获得了|签到成功).*?(\d+)\s*个?\s*魔力值', resp_text
+        # 检查结果
+        resp_text = resp.text
+
+        # 成功: "今日获得了 X 个魔力值" / "重新签到成功,本次签到获得 100 个魔力值"
+        # 成功消息可能被 HTML 标签/换行分隔, 用 re.S 让 . 跨行
+        success_match = re.search(
+            r'(?:获得了|签到成功).*?(\d+)\s*个?\s*魔力值', resp_text, re.S
+        )
+        if success_match or "获得了" in resp_text and "魔力值" in resp_text:
+            # 提取详细信息
+            detail = re.search(
+                r'已累计签到\s*(\d+)\s*次.*?已连续签到\s*(\d+)\s*天.*?获得了\s*(\d+)\s*个?\s*魔力值',
+                resp_text, re.S
             )
-            if success_match or "获得了" in resp_text and "魔力值" in resp_text:
-                # 提取详细信息
-                detail = re.search(
-                    r'已累计签到\s*(\d+)\s*次.*?已连续签到\s*(\d+)\s*天.*?获得了\s*(\d+)\s*个?\s*魔力值',
-                    resp_text
-                )
-                if detail:
-                    print(f"✓ 签到成功！累计 {detail.group(1)} 次，"
-                          f"连续 {detail.group(2)} 天，+{detail.group(3)} 魔力值")
-                else:
-                    print("✓ 签到成功！获得魔力值")
-                return
+            if detail:
+                msg = (f"签到成功！累计 {detail.group(1)} 次，"
+                       f"连续 {detail.group(2)} 天，+{detail.group(3)} 魔力值")
+            else:
+                msg = "签到成功！获得魔力值"
+            log(f"✓ {msg}")
+            return {"success": True, "already": False, "message": msg,
+                    "attempts": attempt, "detail": ""}
 
-            # 错误
-            if "回答错误" in resp_text:
-                print("✗ 答案错误，换题重试...")
-                continue
+        # 错误
+        if "回答错误" in resp_text:
+            log("✗ 答案错误，换题重试...")
+            continue
 
-            # 已签到 (通常是刷新后出现，或者重复提交)
-            if "今日已签到" in resp_text or "已经签到" in resp_text:
-                detail = re.search(
-                    r'已累计签到\s*(\d+)\s*次.*?已连续签到\s*(\d+)\s*天.*?获得了\s*(\d+)\s*个?\s*魔力值',
-                    resp_text
-                )
-                if detail:
-                    print(f"✓ 今日已签到 (累计 {detail.group(1)} 次, "
-                          f"+{detail.group(3)} 魔力值)")
-                else:
-                    print("✓ 今日已签到")
-                return
+        # 已签到 (通常是刷新后出现，或者重复提交)
+        if "今日已签到" in resp_text or "已经签到" in resp_text:
+            detail = re.search(
+                r'已累计签到\s*(\d+)\s*次.*?已连续签到\s*(\d+)\s*天.*?获得了\s*(\d+)\s*个?\s*魔力值',
+                resp_text, re.S
+            )
+            if detail:
+                msg = f"今日已签到 (累计 {detail.group(1)} 次, +{detail.group(3)} 魔力值)"
+            else:
+                msg = "今日已签到"
+            log(f"✓ {msg}")
+            return {"success": True, "already": True, "message": msg,
+                    "attempts": attempt, "detail": ""}
 
-            # 页面还有表单 → 答案未被接受 (可能返回了新题或同一题)
-            if "ban_robot" in resp_text:
-                print("✗ 答案未被接受，换题重试...")
-                continue
+        # 页面还有表单 → 答案未被接受 (可能返回了新题或同一题)
+        if "ban_robot" in resp_text:
+            log("✗ 答案未被接受，换题重试...")
+            continue
 
-            # 未知响应 - 保存以便调试
-            print("? 响应未识别，保存到 /tmp/tjupt_sign_response.html")
-            with open("/tmp/tjupt_sign_response.html", "w") as f:
-                f.write(resp_text)
-            return
-        else:
-            print(f"  ~ 无可靠匹配 (最高 {all_scores[0][1]}: {all_scores[0][2]:.0%})")
-            print("  换题重试...")
+        # 未知响应 - 保存以便调试
+        log("? 响应未识别，保存到 /tmp/tjupt_sign_response.html")
+        with open("/tmp/tjupt_sign_response.html", "w") as f:
+            f.write(resp_text)
+        return {"success": False, "already": False,
+                "message": "响应未识别 (已保存到 /tmp/tjupt_sign_response.html)",
+                "attempts": attempt, "detail": ""}
 
-    print(f"\n{'=' * 50}")
-    print(f"✗ 超过最大重试次数 ({MAX_RETRIES})，签到失败")
-    print(f"  建议手动签到: {BASE_URL}/attendance.php")
+    log(f"\n{'=' * 50}")
+    log(f"✗ 超过最大重试次数 ({MAX_RETRIES})，签到失败")
+    log(f"  建议手动签到: {BASE_URL}/attendance.php")
+    return {"success": False, "already": False,
+            "message": f"超过最大重试次数 ({MAX_RETRIES})，签到失败，"
+                       f"建议手动签到: {BASE_URL}/attendance.php",
+            "attempts": MAX_RETRIES, "detail": ""}
+
+
+def main():
+    print("=" * 50)
+    print("TJUPT 自动签到")
+    print("=" * 50)
+
+    result = sign(session=None, verbose=True)
+
+    if result["success"]:
+        print(f"\n✓ {result['message']}")
+        sys.exit(0)
+    print(f"\n✗ {result['message']}")
     sys.exit(1)
 
 

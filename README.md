@@ -4,12 +4,12 @@
 
 | 站点 | URL | 脚本 | 功能 |
 |---|---|---|---|
-| azusa.wiki | https://azusa.wiki | `sites/azusapt/azusa_login.py` | 登录(ddddocr 验证码)+ 种子搜索 + 封禁诊断 |
+| azusa.wiki | https://azusa.wiki | `sites/azusapt/azusa_login.py` | 登录(ddddocr 验证码)+ 种子搜索 + 封禁诊断(签到系统已官方下线) |
 | u2.dmhy.org | https://u2.dmhy.org | `sites/dmhypt/login.py`, `dmhy.py` | 登录(3 模式降级)+ 签到(作品名验证码)+ 搜索 |
-| pterclub.net | https://pterclub.net | `sites/ptclub/pterclub.py` | 种子搜索 + cookie 有效性检查(浏览器导出 cookie) |
+| pterclub.net | https://pterclub.net | `sites/ptclub/pterclub.py` | 种子搜索 + 签到(attendance-ajax.php)+ cookie 有效性检查 |
 | tjupt.org | https://tjupt.org | `sites/tjupt/tjupt_login.py`, `tjupt_sign.py`, `tjupt_search.py` | 登录 + 海报 OCR 签到 + 搜索/下载 |
 
-**统一入口 `pt_search.py`**: 一次搜索全部四站,统一表格输出(含站点来源),支持 `--site` 站内搜索与 `--check` 登录前预检(见下文"快速用法")。
+**统一入口**: `pt_search.py`(一次搜索全部四站,统一表格输出,含站点来源)与 `pt_checkin.py`(一次签到全部四站,azusa 自动跳过,见下文"快速用法")。
 
 公共逻辑(会话构造、cookie 存取、登录态检查、解析原语、格式化)在 `common/` 包;各站点脚本保持独立可运行。
 
@@ -58,7 +58,7 @@ cookie 文件随各自站点目录存放(格式各不相同,互不复用):
 
 ## 快速用法
 
-**统一入口(推荐)**:默认搜索全部四站,统一表格输出(含站点来源列),或 `--site` 站内搜索:
+**统一入口(推荐)**:搜索默认全部四站,统一表格输出(含站点来源列);签到默认四站全签:
 
 ```bash
 # 全站搜索(输出统一格式, 含站点列)
@@ -70,6 +70,13 @@ conda run -n pt python pt_search.py --check
 # JSON 输出(权威格式, 含全部 URL) / 限制条数 / 打印详情链接
 conda run -n pt python pt_search.py "4K" --json
 conda run -n pt python pt_search.py "4K" --limit 30 -v
+
+# 四站自动签到(azusa 签到下线自动跳过; 退出码 0 = 全部正常)
+conda run -n pt python pt_checkin.py
+# 指定站点签到 / JSON 输出 / 只预检不签到
+conda run -n pt python pt_checkin.py --site tjupt,dmhy
+conda run -n pt python pt_checkin.py --json
+conda run -n pt python pt_checkin.py --check
 ```
 
 各站独立脚本(保持原样,格式各异,供单站/定时任务使用):
@@ -101,27 +108,32 @@ conda run -n pt python sites/ptclub/pterclub.py search "4K" -n 5
 ## 定时签到示例 (crontab)
 
 ```bash
-# 每天 8:03 tjupt 海报签到
+# 每天 08:10 四站统一自动签到(azusa 自动跳过; 退出码 0 = 全部正常)
+10 8 * * * cd /home/kun/pt && /home/kun/miniconda3/envs/pt/bin/python pt_checkin.py >> data/checkin.log 2>&1
+
+# 或仅 tjupt 海报签到(站点禁止自动化, 风险自负)
 3 8 * * * /home/kun/miniconda3/envs/pt/bin/python /home/kun/pt/sites/tjupt/tjupt_sign.py >> /home/kun/pt/sites/tjupt/sign.log 2>&1
 ```
 
 ## 风控警告(务必阅读)
 
-- **azusa.wiki**: 直连 IP 曾被触发登录超限封禁(8 天+)。真实登录/搜索必须走 `AZUSA_PROXY`,且代理出口 IP 同样受"剩余尝试次数"保护,频繁触发会连累代理 IP。统一入口默认 cookie-first(本地 cookie 有效时不登录,避免每次登录消耗次数);`--force-login` 有风控风险,**勿用于定时任务**。
-- **tjupt.org**: 有"异地登录保护",更换网络/IP 后登录会被拒绝(脚本会打印当前 IP)。该保护无法通过 GET 登录页预检(仅在提交登录后出现),统一入口登录失败会明确提示"需在常用网络/IP 下登录"。签到属站点禁止的自动化行为,风险自负。
-- **u2.dmhy.org**: 登录页有剩余尝试次数计数,脚本在 ≤2 次时拒绝登录以防封 IP;优先使用 cookie 模式(统一入口不做自动登录, cookie 失效时提示先运行 `sites/dmhypt/login.py`)。
-- **pterclub.net**: 站点有 Cloudflare Turnstile,脚本不做自动化登录——用浏览器登录后通过油猴脚本 `sites/ptclub/pterclub-cookie-exporter.user.js` 导出 cookie 存为 `sites/ptclub/cookies.json`。
+- **azusa.wiki**: 直连 IP 曾被触发登录超限封禁(8 天+)。真实登录/搜索必须走 `AZUSA_PROXY`,且代理出口 IP 同样受"剩余尝试次数"保护,频繁触发会连累代理 IP。统一入口默认 cookie-first(本地 cookie 有效时不登录,避免每次登录消耗次数);`--force-login` 有风控风险,**勿用于定时任务**。**签到系统已官方下线**(attendance.php 无表单,页面"签到成功"为反爬诱饵),统一签到自动跳过。
+- **tjupt.org**: 有"异地登录保护",更换网络/IP 后登录会被拒绝(脚本会打印当前 IP)。该保护无法通过 GET 登录页预检(仅在提交登录后出现),统一入口登录失败会明确提示"需在常用网络/IP 下登录"。**站点规则明确禁止自动化签到**,风险自负;OCR 识别失败会换题重试(最多 10 次)。
+- **u2.dmhy.org**: 登录页有剩余尝试次数计数,脚本在 ≤2 次时拒绝登录以防封 IP;优先使用 cookie 模式(统一入口不做自动登录, cookie 失效时提示先运行 `sites/dmhypt/login.py`)。签到为作品名验证码,属站点禁止的自动化行为,风险自负。
+- **pterclub.net**: 站点有 Cloudflare Turnstile,脚本不做自动化登录——用浏览器登录后通过油猴脚本 `sites/ptclub/pterclub-cookie-exporter.user.js` 导出 cookie 存为 `sites/ptclub/cookies.json`。签到为 GET `attendance-ajax.php`(无参数,仅 cookie+Referer)。
 
-统一入口的登录前预检(`pt_search.py --check`):先检测网络能否访问登录页 → 再检测剩余登录次数(≤2 输出警告不登录)→ 最后检测本地 cookie 登录态。tjupt 无次数机制显示 N/A;ptclub 预检即 cookie 有效性检查。
+统一入口的登录前预检(`pt_search.py --check` / `pt_checkin.py --check`):先检测网络能否访问登录页 → 再检测剩余登录次数(≤2 输出警告不登录)→ 最后检测本地 cookie 登录态。tjupt 无次数机制显示 N/A;ptclub 预检即 cookie 有效性检查。统一签到(`pt_checkin.py`)对每站先预检再签到,单站失败不影响其他站。
 
 ## 目录结构
 
 ```
 pt/
 ├── pt_search.py            # 统一入口: 全站搜索 / --site 站内搜索 / --check 预检 / --json
+├── pt_checkin.py           # 统一签到: 四站自动签到(azusa 自动跳过) / --site / --json
 ├── common/                 # 共享模块 (constants/env/http/cookies/format/search)
 │   ├── sites.py            #   站点注册表 + 登录前预检 + 搜索结果归一化
-│   └── unified.py          #   四站搜索适配器 + 统一表格/JSON 渲染
+│   ├── unified.py          #   四站搜索适配器 + 统一表格/JSON 渲染
+│   └── checkin.py          #   四站签到适配器 + 签到表格/JSON 渲染 + 预检渲染
 ├── sites/                  # 四个站点目录(各站独立可运行)
 │   ├── azusapt/  dmhypt/  ptclub/  tjupt/
 ├── data/                   # 历史搜索导出样例

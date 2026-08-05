@@ -36,4 +36,12 @@ pt-search-site:
 pt-check:
 	$(PY) pt_search.py --check
 
-# 示例: make azusa-search KW="汉化" / make pt-search KW="4K" / make pt-check
+# 统一签到 (默认四站 / 指定站点 / JSON 输出)
+pt-checkin:
+	$(PY) pt_checkin.py
+pt-checkin-site:
+	$(PY) pt_checkin.py --site "$(SITE)"
+pt-checkin-json:
+	$(PY) pt_checkin.py --json
+
+# 示例: make azusa-search KW="汉化" / make pt-search KW="4K" / make pt-checkin

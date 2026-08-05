@@ -39,6 +39,7 @@ from common import constants, cookies as cookie_util, env, format as fmt, http
 BASE_URL      = "https://pterclub.net"
 TORRENTS_URL  = f"{BASE_URL}/torrents.php"
 INDEX_URL     = f"{BASE_URL}/index.php"
+ATTENDANCE_URL = f"{BASE_URL}/attendance-ajax.php"  # 签到 AJAX (GET, 无参数无 CSRF)
 
 SCRIPT_DIR    = Path(__file__).resolve().parent
 COOKIE_FILE   = SCRIPT_DIR / "cookies.json"
@@ -76,6 +77,47 @@ def check_login(proxy: str = "") -> bool:
                              fail_keywords=("未登录",),
                              success_keywords=("usercp.php", "控制面板"),
                              timeout=15)
+
+
+# ── 签到 ──────────────────────────────────────────────────
+
+def attendance_checkin(proxy: str = "") -> dict:
+    """执行当日签到 (GET attendance-ajax.php, 无参数无 CSRF)。
+
+    请求头: Referer=INDEX_URL + Accept=application/json (per-request 覆盖,
+    不动会话级 header, 避免影响其他调用)。
+
+    返回 {"success", "already", "status", "message", "data"}:
+      status=="1"        → success=True (签到成功, 奖励猫粮, message 为结果文本)
+      其他 status         → already=True (message 含 已签到/重复/今日 等关键词)
+                            否则 success=False (message 透传站点原文)
+      HTTP!=200 或非 JSON → success=False, message 说明响应形式
+    """
+    session = create_session(proxy)
+    resp = session.get(ATTENDANCE_URL,
+                       headers={"Referer": INDEX_URL,
+                                "Accept": "application/json, text/javascript, */*; q=0.01"},
+                       timeout=15)
+    if resp.status_code != 200:
+        return {"success": False, "already": False, "status": None,
+                "message": f"签到请求失败 (HTTP {resp.status_code})", "data": None}
+    try:
+        data = resp.json()
+    except ValueError:
+        return {"success": False, "already": False, "status": None,
+                "message": f"响应非 JSON (HTTP {resp.status_code})", "data": None}
+
+    status = data.get("status")
+    # message 常含 HTML 标签(如 <p>第 N 次签到…</p>), 清理为纯文本
+    message = re.sub(r"<[^>]+>", " ", data.get("message") or data.get("data") or "")
+    message = re.sub(r"\s+", " ", message).strip()
+    if status == "1":
+        return {"success": True, "already": False, "status": status,
+                "message": message, "data": data.get("data")}
+    # 非成功状态: 已签到 / 失败
+    already = any(kw in str(message) for kw in ("已签到", "重复", "今日", "already"))
+    return {"success": False, "already": already, "status": status,
+            "message": message, "data": data.get("data")}
 
 
 # ── 搜索 ──────────────────────────────────────────────────
@@ -352,14 +394,17 @@ def main():
         if not cookies:
             print("No cookie file found")
             sys.exit(1)
-        # TODO: 需要确定 #do-attendance 的 data-url（仅在未签到时可见）
-        session = create_session(proxy)
-        resp = session.get(f"{BASE_URL}/index.php", timeout=15)
-        m = re.search(r'attendance-wrap[^>]*>([^<]+)', resp.text)
-        if m:
-            print(f"  {m.group(1).strip()}")
+        if not check_login(proxy):
+            print("[FAIL] Cookie expired or invalid")
+            sys.exit(1)
+        r = attendance_checkin(proxy=proxy)
+        if r["success"]:
+            print(f"[OK] 签到成功: {r['message']}")
+        elif r["already"]:
+            print(f"[OK] 今日已签到: {r['message']}")
         else:
-            print("  (签到接口待明天调试)")
+            print(f"[FAIL] 签到失败: {r['message']}")
+            sys.exit(1)
         return
 
     if args.cmd == "search":
