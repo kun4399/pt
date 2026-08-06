@@ -1,27 +1,36 @@
 #!/usr/bin/env bash
 # ============================================================
-# PT 站每日自动签到 systemd 服务一键安装脚本
+# PT 站 systemd 服务一键安装脚本
 #
-# 用法:
+# 用法(普通用户运行, 不要用 sudo):
 #   ./deploy/install.sh             # 一键安装(含钉钉测试消息)
 #   ./deploy/install.sh --no-test   # 跳过钉钉测试消息
 #   ./deploy/install.sh --dry-run   # 只预览要执行的命令, 不执行
+#   ./deploy/install.sh --help      # 帮助
 #
-# 说明:
-#   - sudo 操作会提示输入密码
-#   - 可重复执行(幂等, 重跑会覆盖单元并重新启用)
-#   - 单元文件的 User/Group 自动替换为当前用户
-#   - 安装后每天 08:10 自动四站签到, 日志 data/checkin.log,
-#     签到失败/登录失效/cookie 失效 → 钉钉通知
+# sudo 说明:
+#   - **用普通用户运行本脚本**(如 kun), 不要 `sudo ./install.sh`
+#     - 脚本内部仅在需要时调用 sudo(安装 systemd 单元、重启 frpc),
+#       会交互提示输入密码
+#     - 若误用 sudo 运行, 服务 User 会被写成 root(脚本已用 SUDO_USER
+#       自动纠正, 并给出警告)
+#   - 安装内容: 每日签到定时器 + cookie 接收服务 + 钉钉机器人服务
+#     (后两者按 .env 配置情况决定是否安装)
+#
+# 可重复执行(幂等): 重跑会覆盖单元、强制重启服务加载最新代码
 # ============================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="$PROJECT_ROOT/.env"
 SERVICE="pt-checkin.service"
 TIMER="pt-checkin.timer"
 # conda env pt 的 python(可用环境变量 PYTHON 覆盖)
 PYTHON="${PYTHON:-/home/kun/miniconda3/envs/pt/bin/python}"
+# 服务 User/Group: 普通用户运行取当前用户; sudo 运行时取 SUDO_USER(原始用户)
+SVC_USER="${SUDO_USER:-$(id -un)}"
+SVC_GROUP="$(id -gn "$SVC_USER" 2>/dev/null || echo "$SVC_USER")"
 LOG_FILE="$PROJECT_ROOT/data/checkin.log"
 
 TEST_NOTIFY=1
@@ -30,7 +39,11 @@ for arg in "$@"; do
     case "$arg" in
         --no-test) TEST_NOTIFY=0 ;;
         --dry-run) DRY_RUN=1 ;;
-        *) echo "未知参数: $arg (支持 --no-test / --dry-run)" >&2; exit 1 ;;
+        --help|-h)
+            # 打印头部注释块(去掉 # 前缀)
+            awk 'NR > 1 && /^#/ { print substr($0, 3) } NR > 1 && !/^#/ { exit }' "$0"
+            exit 0 ;;
+        *) echo "未知参数: $arg (支持 --no-test / --dry-run / --help)" >&2; exit 1 ;;
     esac
 done
 
@@ -48,11 +61,28 @@ run() {
     fi
 }
 
+# 安装并启用 systemd 单元(强制 restart 确保加载最新代码)
+install_unit() {
+    local unit="$1"
+    run sudo cp "$SCRIPT_DIR/$unit" "/etc/systemd/system/$unit"
+    run sudo sed -i "s/^User=.*/User=$SVC_USER/; s/^Group=.*/Group=$SVC_GROUP/" "/etc/systemd/system/$unit"
+    run sudo systemctl daemon-reload
+    run sudo systemctl enable "$unit"
+    run sudo systemctl restart "$unit" || true
+}
+
 cd "$PROJECT_ROOT"
 
-say "PT 四站每日自动签到 systemd 服务安装"
+say "PT 站 systemd 服务一键安装"
 echo "  项目目录: $PROJECT_ROOT"
+echo "  运行用户: $(id -un) (服务将以 $SVC_USER 运行)"
 [ "$DRY_RUN" = "1" ] && echo "  模式: dry-run (仅预览)"
+
+# ---- 0. root 运行警告 ----
+if [ "$(id -u)" = "0" ]; then
+    warn "检测到以 root 运行! 建议用普通用户执行(服务 User 已自动纠正为 $SVC_USER)"
+    warn "正确用法: ./deploy/install.sh (不要 sudo)"
+fi
 
 # ---- 1. 前置检查 ----
 say "检查前置条件"
@@ -60,19 +90,21 @@ say "检查前置条件"
 [ -f "$SCRIPT_DIR/$SERVICE" ] || fail "缺少单元文件: deploy/$SERVICE"
 [ -f "$SCRIPT_DIR/$TIMER" ] || fail "缺少单元文件: deploy/$TIMER"
 command -v systemctl >/dev/null 2>&1 || fail "systemctl 不可用"
-command -v sudo >/dev/null 2>&1 || fail "sudo 不可用"
+command -v sudo >/dev/null 2>&1 || fail "sudo 不可用(安装 systemd 单元需要)"
+command -v openssl >/dev/null 2>&1 || warn "openssl 不可用(生成 token 将用 /dev/urandom 兜底)"
+if ! "$PYTHON" -c "import dingtalk_stream" 2>/dev/null; then
+    warn "dingtalk-stream 未安装(钉钉机器人依赖), 执行: $PYTHON -m pip install dingtalk-stream"
+fi
 ok "前置检查通过"
 
 # ---- 2. 钉钉配置检查 ----
-if grep -q "^DINGTALK_WEBHOOK=." "$PROJECT_ROOT/.env" 2>/dev/null \
-   && grep -q "^DINGTALK_SECRET=." "$PROJECT_ROOT/.env" 2>/dev/null; then
-    ok "钉钉通知已配置 (DINGTALK_WEBHOOK / DINGTALK_SECRET)"
+if grep -q "^DINGTALK_WEBHOOK=." "$ENV_FILE" 2>/dev/null; then
+    ok "钉钉推送已配置 (DINGTALK_WEBHOOK)"
 else
-    warn ".env 未配置 DINGTALK_WEBHOOK / DINGTALK_SECRET → 签到失败时不会收到钉钉通知"
-    warn "稍后可在 $PROJECT_ROOT/.env 追加这两个配置项"
+    warn ".env 未配置 DINGTALK_WEBHOOK → 签到失败时不会收到钉钉通知"
 fi
 
-# ---- 3. 钉钉测试消息(默认发送, 验证加签) ----
+# ---- 3. 钉钉测试消息(默认发送, 验证推送链路) ----
 if [ "$TEST_NOTIFY" = "1" ]; then
     say "发送钉钉测试消息"
     run "$PYTHON" "$PROJECT_ROOT/pt_checkin.py" --notify-test
@@ -81,24 +113,20 @@ else
     say "跳过钉钉测试消息 (--no-test)"
 fi
 
-# ---- 4. 预建日志文件(保持当前用户属主, 否则 systemd 首启以 root 创建) ----
+# ---- 4. 预建日志文件(保持服务用户属主) ----
 say "预建日志文件"
 mkdir -p "$PROJECT_ROOT/data"
-run touch "$LOG_FILE"
-ok "日志文件: $LOG_FILE"
+run touch "$LOG_FILE" "$PROJECT_ROOT/data/cookie-server.log" "$PROJECT_ROOT/data/dingtalk-bot.log"
+ok "日志文件: data/{checkin,cookie-server,dingtalk-bot}.log"
 
-# ---- 5. 安装 systemd 单元(Unit 的 User/Group 替换为当前用户) ----
-say "安装签到单元 (需要 sudo 密码)"
-run sudo cp "$SCRIPT_DIR/$SERVICE" /etc/systemd/system/ && \
-run sudo sed -i "s/^User=.*/User=$(id -un)/; s/^Group=.*/Group=$(id -gn)/" "/etc/systemd/system/$SERVICE"
-run sudo cp "$SCRIPT_DIR/$TIMER" /etc/systemd/system/
-run sudo systemctl daemon-reload
-run sudo systemctl enable --now "$TIMER"
-ok "已安装并启用 $TIMER (每天 08:10 自动签到, 开机自启, Persistent 开机补跑)"
+# ---- 5. 每日签到定时器 ----
+say "安装签到定时器 (每天 08:10, 需要 sudo 密码)"
+install_unit "$SERVICE"
+install_unit "$TIMER"
+ok "已安装并启用 $TIMER (每天 08:10 自动四站签到, Persistent 开机补跑)"
 
 # ---- 6. cookie 接收服务 ----
-# 6.1 COOKIE_SERVER_TOKEN(未配置才生成, 幂等)
-ENV_FILE="$PROJECT_ROOT/.env"
+# 6.1 生成 token(未配置才生成, 幂等)
 if grep -q "^COOKIE_SERVER_TOKEN=." "$ENV_FILE" 2>/dev/null; then
     COOKIE_TOKEN="$(grep '^COOKIE_SERVER_TOKEN=' "$ENV_FILE" | head -1 | cut -d= -f2)"
 else
@@ -108,26 +136,25 @@ else
     ok "已生成 COOKIE_SERVER_TOKEN"
 fi
 
-# 6.2 预建 cookie-server.log
-say "预建 cookie-server 日志文件"
-run touch "$PROJECT_ROOT/data/cookie-server.log"
-ok "日志文件: $PROJECT_ROOT/data/cookie-server.log"
+if ! grep -q "^COOKIE_DOWNLOAD_TOKEN=." "$ENV_FILE" 2>/dev/null; then
+    say "生成 COOKIE_DOWNLOAD_TOKEN (写入 .env)"
+    DL_TOKEN="$(openssl rand -hex 16 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)"
+    printf 'COOKIE_DOWNLOAD_TOKEN=%s\n' "$DL_TOKEN" >> "$ENV_FILE"
+    ok "已生成 COOKIE_DOWNLOAD_TOKEN"
+fi
 
-# 6.3 安装 pt-cookie-server.service
-say "安装 cookie 接收服务单元 (常驻监听 127.0.0.1:8766)"
-run sudo cp "$SCRIPT_DIR/pt-cookie-server.service" /etc/systemd/system/ && \
-run sudo sed -i "s/^User=.*/User=$(id -un)/; s/^Group=.*/Group=$(id -gn)/" "/etc/systemd/system/pt-cookie-server.service"
-run sudo systemctl daemon-reload
-run sudo systemctl enable --now pt-cookie-server.service
-ok "已安装并启用 pt-cookie-server.service (常驻, Restart=always)"
+# 6.2 安装 pt-cookie-server.service(常驻, 强制重启加载最新代码)
+say "安装 cookie 接收服务 (常驻监听 127.0.0.1:8766, 需要 sudo 密码)"
+install_unit "pt-cookie-server.service"
+ok "已安装并启用 pt-cookie-server.service (含种子代理下载端点)"
 
-# 6.4 frpc.toml 追加 pt-cookie 穿透(幂等)
+# 6.3 frpc.toml 追加 pt-cookie 穿透(幂等)并重启 frpc
 FRPC_TOML="${FRPC_TOML:-/home/kun/frp/frpc.toml}"
 if [ -f "$FRPC_TOML" ]; then
     if grep -q 'name = "pt-cookie"' "$FRPC_TOML"; then
         ok "frpc.toml 已含 pt-cookie 穿透"
     else
-        say "追加 frp 穿透到 $FRPC_TOML"
+        say "追加 frp 穿透到 $FRPC_TOML (需要 sudo 密码重启 frpc)"
         cat >> "$FRPC_TOML" <<EOF
 
 [[proxies]]
@@ -144,7 +171,17 @@ else
     warn "未找到 $FRPC_TOML, 跳过 frp 配置 (可稍后手动追加 pt-cookie 穿透)"
 fi
 
-# ---- 7. 生成油猴脚本已配置副本(填好 SERVER_URL/TOKEN, 直接安装即可) ----
+# ---- 7. 钉钉 stream 机器人(常驻, @机器人搜索回复) ----
+if grep -q "^DINGTALK_CLIENT_ID=." "$ENV_FILE" 2>/dev/null \
+   && grep -q "^DINGTALK_CLIENT_SECRET=." "$ENV_FILE" 2>/dev/null; then
+    say "安装钉钉 stream 机器人服务 (常驻, @机器人搜索回复, 需要 sudo 密码)"
+    install_unit "pt-dingtalk-bot.service"
+    ok "已安装并启用 pt-dingtalk-bot.service (日志: data/dingtalk-bot.log)"
+else
+    warn "未配置 DINGTALK_CLIENT_ID/SECRET, 跳过钉钉机器人服务 (可在 .env 补配后重跑 install.sh)"
+fi
+
+# ---- 8. 生成油猴脚本已配置副本(填好 SERVER_URL/TOKEN, 直接安装即可) ----
 FRP_IP="$(grep '^FRP_PUBLIC_IP=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2)"
 COOKIE_PORT="$(grep '^COOKIE_SERVER_PORT=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2)"
 FRP_IP="${FRP_IP:-39.101.137.195}"
@@ -159,18 +196,21 @@ if [ -f "$US_TPL" ]; then
     ok "已生成: userscripts/pt-cookie-sender.configured.user.js (浏览器直接安装此文件)"
 fi
 
-# ---- 8. 完成 ----
+# ---- 9. 完成 ----
 say "安装完成"
-echo "  签到定时器: systemctl list-timers --all | grep pt-checkin"
-echo "  手动签到:   sudo systemctl start pt-checkin.service"
-echo "  签到日志:   tail -30 $PROJECT_ROOT/data/checkin.log"
-echo "  cookie 服务: sudo systemctl status pt-cookie-server.service"
-echo "  cookie 日志: tail -30 $PROJECT_ROOT/data/cookie-server.log"
-echo "  通知测试:   $PYTHON $PROJECT_ROOT/pt_checkin.py --notify-test"
 echo ""
-say "油猴脚本(推荐直接安装已配置副本, 无需手动改):"
-echo "  $US_DIST"
-echo "  (模板: userscripts/pt-cookie-sender.user.js, 需手动填 TOKEN)"
-echo "  SERVER_URL: $SERVER_URL"
-echo "  TOKEN:      $COOKIE_TOKEN"
-echo "  卸载:       sudo systemctl disable --now pt-checkin.timer && sudo rm /etc/systemd/system/pt-checkin.*"
+echo "  服务状态(全部):"
+echo "    systemctl list-timers --all | grep pt-checkin   # 签到定时器"
+echo "    systemctl status pt-cookie-server.service       # cookie 接收 + 种子代理下载"
+echo "    systemctl status pt-dingtalk-bot.service        # 钉钉机器人"
+echo ""
+echo "  日志:"
+echo "    tail -30 data/checkin.log / data/cookie-server.log / data/dingtalk-bot.log"
+echo ""
+echo "  油猴脚本(浏览器直接安装已配置副本, 无需手动改):"
+echo "    $US_DIST"
+echo "    SERVER_URL: $SERVER_URL"
+echo "    TOKEN:      $COOKIE_TOKEN"
+echo ""
+echo "  验证下载端点: curl -s http://127.0.0.1:8766/api/health"
+echo "  卸载:         ./deploy/uninstall.sh (用普通用户运行)"

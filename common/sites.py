@@ -100,6 +100,29 @@ def resolve_proxy(key: str, override: str = "") -> str:
     return get_site(key)["proxy"]() or ""
 
 
+def load_site_cookies(session, site_key: str) -> bool:
+    """按站点格式把本地 cookie 文件注入 session; 无文件/加载失败返回 False。
+
+    供统一入口与 cookie_server 下载端点复用(各站格式见 common/cookies.py)。
+    """
+    path = cookie_path(site_key)
+    if not path or not path.exists():
+        return False
+    if site_key == "azusa":
+        cookies.load_netscape(session, path, quiet=True)
+    elif site_key == "tjupt":
+        cookies.load_key_value(session, path, domain="tjupt.org")
+    elif site_key == "dmhy":
+        s = cookies.load_pickle(path)
+        if s is not None:
+            session.cookies = s.cookies
+    elif site_key == "ptclub":
+        cj = cookies.load_browser_json(path)
+        if cj:
+            cookies.inject_browser_cookies(session, cj)
+    return True
+
+
 def cookie_path(site_key: str) -> Path | None:
     """站点 cookie 文件绝对路径;无则返回 None。
 

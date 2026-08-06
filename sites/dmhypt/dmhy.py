@@ -32,6 +32,7 @@ for _p in (_SITE_DIR, _ROOT):
         sys.path.insert(0, _p)
 
 from common import constants, cookies, env, http, sites
+from common import search as search_util   # 本地函数 search 遮蔽模块名, 用别名
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -285,6 +286,11 @@ def search(session: requests.Session, keyword: str, limit: int = 50,
     if not torrent_table:
         body = soup.get_text()
         if any(kw in body for kw in ["没有找到", "无结果", "nothing found"]):
+            return {"success": True, "results": [], "total": 0,
+                    "message": "No results found"}
+        # 无结果时站点不渲染表格(标题仍为"搜索结果 - 关键词")→ 返回空结果
+        title = search_util.extract_title(r.text) or ""
+        if "搜索结果" in title or "torrents.php" in str(r.url):
             return {"success": True, "results": [], "total": 0,
                     "message": "No results found"}
         return {"success": False, "results": [], "total": 0,

@@ -25,7 +25,7 @@ conda env create -f environment.yml      # 或 pip install -r requirements.txt
 验证:
 
 ```bash
-conda run -n pt python -c "import requests, bs4, lxml, dotenv, ddddocr, pytesseract, PIL, rich; print('OK')"
+conda run -n pt python -c "import requests, bs4, lxml, dotenv, ddddocr, pytesseract, PIL, rich, dingtalk_stream; print('OK')"
 conda run -n pt tesseract --list-langs | grep chi_sim   # 中文 OCR 语言包
 ```
 
@@ -141,7 +141,13 @@ cookie 失效(ptclub/dmhy 需手动更新)、签到失败时通过钉钉机器�
 cd ~/pt && ./deploy/install.sh        # 一键安装(自动发一条钉钉测试消息; 路径按实际替换)
 ./deploy/install.sh --no-test         # 跳过测试消息
 ./deploy/install.sh --dry-run         # 只预览要执行的命令
+./deploy/install.sh --help            # 帮助
 ```
+
+**⚠ 用普通用户运行(不要 `sudo ./install.sh`)**: 脚本内部仅在需要时调用 sudo
+(安装 systemd 单元、重启 frpc),会交互提示输入密码;误用 sudo 会警告并自动纠正
+服务 User。安装内容: 每日签到定时器 + cookie 接收服务(含种子代理下载)+ 钉钉机器人
+(后两者按 .env 配置自动决定),重跑幂等且强制重启服务加载最新代码。
 
 卸载:
 
@@ -149,7 +155,10 @@ cd ~/pt && ./deploy/install.sh        # 一键安装(自动发一条钉钉测试
 ./deploy/uninstall.sh                 # 卸载 systemd 服务(保留配置与数据)
 ./deploy/uninstall.sh --purge         # 额外删除日志/cookie/油猴副本/frp 穿透
 ./deploy/uninstall.sh --dry-run       # 只预览
+./deploy/uninstall.sh --help          # 帮助
 ```
+
+同样**用普通用户运行**(内部按需 sudo)。
 
 脚本自动完成:前置检查 → 钉钉配置检查 → 测试消息 → 预建日志 `data/checkin.log` →
 安装 `pt-checkin.service`/`.timer`(User/Group 自动替换为当前用户)→ 启用 timer。幂等,可重复执行。
@@ -226,6 +235,27 @@ token 内嵌在油猴脚本中, 任何拿到脚本的人可覆盖这 4 个 cooki
 cookie(如 tjupt 的 access_token)会收到警告——此时请用浏览器开发者工具或
 GM_cookie 处理(或手动放置 cookie 文件到 `data/cookies/<站点>/`)。
 
+## 钉钉双向机器人(@机器人搜索 PT 资源)
+
+基于钉钉**企业内部应用机器人 Stream 模式**(WebSocket 长连接,无需公网入口):
+
+- **主动推送**: 签到失败/登录失效等通知走 `DINGTALK_WEBHOOK`(企业内部应用机器人 webhook,未开加签时无需签名,`DINGTALK_SECRET` 留空)
+- **接收消息**: 在钉钉群聊中 **@机器人 发送关键词**(如 `@机器人 4K`),机器人自动搜索四个 PT 站并以 markdown 回复(标题/大小/做种/详情与下载链接,每站最多 `BOT_REPLY_LIMIT` 条,默认 5);群聊仅能收到 @ 机器人的消息(协议限制),单聊可收全部消息
+
+配置(.env): `DINGTALK_CLIENT_ID` / `DINGTALK_CLIENT_SECRET`(企业内部应用凭据)、`DINGTALK_WEBHOOK`(推送)、`BOT_REPLY_LIMIT`(回复条数)。
+
+启动方式(任选):
+```bash
+python pt_dingtalk_bot.py                     # 前台运行(测试)
+./deploy/install.sh                           # 一键安装为常驻 systemd 服务
+sudo systemctl status pt-dingtalk-bot.service # 服务状态
+tail -30 data/dingtalk-bot.log                # 接收日志
+```
+
+验证: 群里 @机器人 发送 `4K` → 应收到四站搜索结果 markdown(每站按做种数降序);发送空消息 → 提示输入关键词。
+
+**一键下载种子**: 回复中的「下载」链接指向 `http://<公网IP>:8766/api/download` 代理下载端点——服务器用本地 cookie + 代理拉取种子后直接返回文件,**浏览器无需登录/无需代理**。该端点独立鉴权(`COOKIE_DOWNLOAD_TOKEN`,install.sh 自动生成),仅允许请求本站域名 URL(防 SSRF)。
+
 ## 定时签到示例 (crontab, 替代方案)
 
 ```bash
@@ -252,11 +282,13 @@ pt/
 ├── pt_search.py            # 统一入口: 全站搜索 / --site 站内搜索 / --check 预检 / --json
 ├── pt_checkin.py           # 统一签到: 四站自动签到(azusa 自动跳过) / --site / --json
 ├── pt_cookie_server.py     # cookie 接收服务启动器(油猴脚本发送的 cookie → 本地保存)
+├── pt_dingtalk_bot.py      # 钉钉 stream 机器人启动器(@机器人搜索回复)
 ├── common/                 # 共享模块 (constants/env/http/cookies/format/search)
 │   ├── sites.py            #   站点注册表 + 登录前预检 + 搜索结果归一化
 │   ├── unified.py          #   四站搜索适配器 + 统一表格/JSON 渲染
 │   ├── checkin.py          #   四站签到适配器 + 签到表格/JSON 渲染 + 预检渲染
-│   ├── notify.py           #   钉钉机器人通知(加签 + 发送)
+│   ├── notify.py           #   钉钉机器人通知(加签可选 + 发送)
+│   ├── dingtalk_bot.py     #   Stream 机器人(收消息 → 搜索 → markdown 回复)
 │   └── cookie_server.py    #   HTTP 接收服务(鉴权 + 按站点格式落盘)
 ├── userscripts/            # 油猴脚本 (pt-cookie-sender.user.js 四站 cookie 发送)
 ├── deploy/                 # systemd 单元 (pt-checkin.service+.timer / pt-cookie-server.service, install.sh 一键安装)

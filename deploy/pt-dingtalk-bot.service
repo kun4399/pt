@@ -1,0 +1,19 @@
+[Unit]
+Description=PT DingTalk stream bot (@机器人搜索回复)
+After=network.target
+
+[Service]
+Type=simple
+User=kun
+Group=kun
+WorkingDirectory=/home/kun/pt
+ExecStart=/home/kun/miniconda3/envs/pt/bin/python pt_dingtalk_bot.py
+Restart=always
+RestartSec=3
+StandardOutput=append:/home/kun/pt/data/dingtalk-bot.log
+StandardError=append:/home/kun/pt/data/dingtalk-bot.log
+Environment=PYTHONUNBUFFERED=1
+# WebSocket 长连接, 无外呼代理需求; 钉钉 API 国内直连
+
+[Install]
+WantedBy=multi-user.target

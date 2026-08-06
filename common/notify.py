@@ -43,13 +43,17 @@ def send_dingtalk(text: str, webhook: str = "", secret: str = "") -> bool:
         webhook = env.get("DINGTALK_WEBHOOK")
     if not secret:
         secret = env.get("DINGTALK_SECRET")
-    if not webhook or not secret:
-        log.info("钉钉通知未配置 (DINGTALK_WEBHOOK/DINGTALK_SECRET), 跳过")
+    if not webhook:
+        log.info("钉钉通知未配置 (DINGTALK_WEBHOOK), 跳过")
         return False
 
-    timestamp_ms = str(round(time.time() * 1000))
-    sep = "&" if "?" in webhook else "?"
-    url = f"{webhook}{sep}timestamp={timestamp_ms}&sign={_sign(secret, timestamp_ms)}"
+    # 未开启"加签"安全设置时 secret 为空, 直接 POST(企业内部应用机器人默认场景)
+    if secret:
+        timestamp_ms = str(round(time.time() * 1000))
+        sep = "&" if "?" in webhook else "?"
+        url = f"{webhook}{sep}timestamp={timestamp_ms}&sign={_sign(secret, timestamp_ms)}"
+    else:
+        url = webhook
 
     session = http.make_session()
     try:

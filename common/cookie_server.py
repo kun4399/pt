@@ -17,6 +17,7 @@
 
 import json
 import logging
+import re
 import secrets
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -132,7 +133,8 @@ def save_site_cookies(site: str, cookies_list: list) -> dict:
 class CookieHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"   # 保活; 所有响应必须带 Content-Length
 
-    token = ""                     # make_server 注入
+    token = ""                     # make_server 注入 (写 cookie 鉴权)
+    download_token = ""            # make_server 注入 (下载端点鉴权, 独立 token)
 
     # ---- 响应工具 ----
     def _send_json(self, status: int, data: dict) -> None:
@@ -165,13 +167,83 @@ class CookieHandler(BaseHTTPRequestHandler):
         param = query.get("token", [""])[0]
         return bool(param) and secrets.compare_digest(param, self.token)
 
+    def _check_download_auth(self):
+        """下载端点独立鉴权(COOKIE_DOWNLOAD_TOKEN, 与写 cookie 的 token 隔离)。"""
+        header = self.headers.get("X-Auth-Token", "")
+        if header:
+            return bool(self.download_token) and secrets.compare_digest(header, self.download_token)
+        query = parse_qs(urlparse(self.path).query)
+        param = query.get("token", [""])[0]
+        return (bool(self.download_token) and bool(param)
+                and secrets.compare_digest(param, self.download_token))
+
     # ---- 路由 ----
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/api/health":
             self._send_json(200, {"ok": True, "service": "pt-cookie-server"})
             return
+        if path == "/api/download":
+            self._handle_download()
+            return
         self._send_json(404, {"ok": False, "error": "not found"})
+
+    def _handle_download(self) -> None:
+        """GET /api/download?site=x&url=<完整下载链接>&token=<下载token>
+
+        用该站点本地 cookie + 代理请求种子, 二进制流返回(浏览器免登录下载)。
+        安全: url 必须以站点 base_url 开头(防 SSRF); 独立下载 token 鉴权。
+        """
+        query = parse_qs(urlparse(self.path).query)
+        if not self._check_download_auth():
+            log.warning("GET /api/download 鉴权失败 (from %s)", self.client_address[0])
+            self._send_json(403, {"ok": False, "error": "unauthorized"})
+            return
+        site = query.get("site", [""])[0]
+        url = query.get("url", [""])[0]
+        if site not in sites.site_keys():
+            self._send_json(400, {"ok": False, "error": f"site 必须是 {'|'.join(sites.site_keys())}"})
+            return
+        base = sites.get_site(site)["base_url"]
+        if not url.startswith(base + "/"):
+            self._send_json(400, {"ok": False, "error": "url 不属于该站点, 拒绝"})
+            return
+
+        s = requests.Session()
+        s.trust_env = False
+        s.headers["User-Agent"] = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                                   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        s.headers["Referer"] = base + "/"
+        proxy = sites.resolve_proxy(site)
+        if proxy:
+            s.proxies = {"http": proxy, "https": proxy}
+        try:
+            sites.load_site_cookies(s, site)   # 按站点格式注入本地 cookie
+        except Exception as e:
+            self._send_json(500, {"ok": False, "error": f"cookie 加载失败: {e}"})
+            return
+        try:
+            resp = s.get(url, timeout=30, allow_redirects=True)
+        except Exception as e:
+            log.warning("GET /api/download 请求失败 site=%s: %s", site, e)
+            self._send_json(502, {"ok": False, "error": f"{type(e).__name__}: {e}"})
+            return
+        content = resp.content
+        if resp.status_code != 200 or b"<html" in content[:200].lower() or len(content) < 8:
+            self._send_json(502, {"ok": False,
+                                  "error": f"HTTP {resp.status_code}, 响应非种子文件(登录失效?)"})
+            return
+        tid = re.search(r"id=(\d+)", url)
+        filename = f"{site}_{tid.group(1) if tid else 'torrent'}.torrent"
+        log.info("GET /api/download site=%s id=%s bytes=%d", site,
+                 tid.group(1) if tid else "?", len(content))
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-bittorrent")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(content)
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
@@ -209,9 +281,10 @@ class CookieHandler(BaseHTTPRequestHandler):
 
 
 def make_server(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT,
-                token: str = "") -> ThreadingHTTPServer:
-    """创建 cookie 接收服务。token 注入 handler。"""
+                token: str = "", download_token: str = "") -> ThreadingHTTPServer:
+    """创建 cookie 接收服务。token 注入 handler(下载端点用独立 download_token)。"""
     CookieHandler.token = token
+    CookieHandler.download_token = download_token
     server = ThreadingHTTPServer((host, port), CookieHandler)
     server.allow_reuse_address = True
     return server

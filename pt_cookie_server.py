@@ -39,7 +39,8 @@ def main() -> int:
         print(f"✗ {e}", file=sys.stderr)
         return 1
 
-    server = cookie_server.make_server(args.host, args.port, token)
+    server = cookie_server.make_server(args.host, args.port, token,
+                                       download_token=env.get("COOKIE_DOWNLOAD_TOKEN"))
     print(f"cookie server listening on http://{args.host}:{args.port} (token 已配置)")
     try:
         server.serve_forever()

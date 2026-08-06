@@ -568,6 +568,10 @@ def search_torrents(session, keyword, page=0, search_area=0, search_mode=0, incl
     # download.php / details.php 快捷链接，且整页有嵌套表格包装行。
     torrents_table = soup.find("table", class_="torrents")
     if torrents_table is None:
+        # 无结果时站点不渲染表格(标题仍为"搜索结果 - 关键词")→ 返回空结果
+        if "搜索结果" in html or "torrents.php" in str(resp.url):
+            return {"keyword": keyword, "total_results_estimate": 0, "page": page,
+                    "results_per_page": 0, "results": []}
         raise RuntimeError("未找到种子列表表格（页面结构可能已变化）")
     all_rows = torrents_table.find_all("tr", recursive=False)
 

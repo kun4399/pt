@@ -2,17 +2,22 @@
 # ============================================================
 # PT 站 systemd 服务卸载脚本(install.sh 的对应卸载)
 #
-# 用法:
+# 用法(普通用户运行, 不要用 sudo):
 #   ./deploy/uninstall.sh          # 卸载 systemd 服务(保留配置与数据)
 #   ./deploy/uninstall.sh --purge  # 额外删除日志/cookie/油猴副本/frp 穿透
 #   ./deploy/uninstall.sh --dry-run# 只预览要执行的命令, 不执行
+#   ./deploy/uninstall.sh --help   # 帮助
 #
-# 说明:
+# sudo 说明:
+#   - **用普通用户运行本脚本**(如 kun), 不要 `sudo ./uninstall.sh`
+#     - 脚本内部仅在需要时调用 sudo(停用 systemd 单元、重启 frpc),
+#       会交互提示输入密码
 #   - 默认只停用并删除 systemd 单元(pt-checkin.timer / pt-checkin.service
-#     / pt-cookie-server.service), 代码、.env、data/ 数据全部保留
+#     / pt-cookie-server.service / pt-dingtalk-bot.service),
+#     代码、.env、data/ 数据全部保留
 #   - --purge 额外: 移除 frpc.toml 的 pt-cookie 穿透并重启 frpc、
-#     删除 data/cookie-server.log 与 data/checkin.log、删除
-#     data/cookies/ 与油猴已配置副本; .env 凭据始终保留(需手动删除)
+#     删除三个日志文件、删除 data/cookies/ 与油猴已配置副本;
+#     .env 凭据始终保留(需手动删除)
 #   - 可重复执行(幂等)
 # ============================================================
 set -euo pipefail
@@ -27,7 +32,10 @@ for arg in "$@"; do
     case "$arg" in
         --purge) PURGE=1 ;;
         --dry-run) DRY_RUN=1 ;;
-        *) echo "未知参数: $arg (支持 --purge / --dry-run)" >&2; exit 1 ;;
+        --help|-h)
+            sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0 ;;
+        *) echo "未知参数: $arg (支持 --purge / --dry-run / --help)" >&2; exit 1 ;;
     esac
 done
 
@@ -48,18 +56,25 @@ cd "$PROJECT_ROOT"
 
 say "PT 站 systemd 服务卸载"
 echo "  项目目录: $PROJECT_ROOT"
+echo "  运行用户: $(id -un)"
 [ "$DRY_RUN" = "1" ] && echo "  模式: dry-run (仅预览)"
 [ "$PURGE" = "1" ] && echo "  模式: purge (含日志/cookie/frp 穿透清理)"
+
+# ---- 0. root 运行警告 ----
+if [ "$(id -u)" = "0" ]; then
+    warn "检测到以 root 运行! 建议用普通用户执行"
+    warn "正确用法: ./deploy/uninstall.sh (不要 sudo)"
+fi
 
 # ---- 1. 前置检查 ----
 say "检查前置条件"
 command -v systemctl >/dev/null 2>&1 || fail "systemctl 不可用"
-command -v sudo >/dev/null 2>&1 || fail "sudo 不可用"
+command -v sudo >/dev/null 2>&1 || fail "sudo 不可用(停用 systemd 单元需要)"
 ok "前置检查通过"
 
 # ---- 2. 停用并删除 systemd 单元(需要 sudo) ----
 say "停用并删除 systemd 单元 (需要 sudo 密码)"
-for unit in pt-checkin.timer pt-checkin.service pt-cookie-server.service; do
+for unit in pt-checkin.timer pt-checkin.service pt-cookie-server.service pt-dingtalk-bot.service; do
     if systemctl list-unit-files 2>/dev/null | grep -q "^${unit} "; then
         run sudo systemctl stop "$unit" 2>/dev/null || true
         run sudo systemctl disable "$unit" 2>/dev/null || true
@@ -77,7 +92,7 @@ if [ "$PURGE" = "1" ]; then
     # 3.1 frpc.toml 移除 pt-cookie 穿透(幂等)并重启 frpc
     FRPC_TOML="${FRPC_TOML:-/home/kun/frp/frpc.toml}"
     if [ -f "$FRPC_TOML" ] && grep -q 'name = "pt-cookie"' "$FRPC_TOML"; then
-        say "移除 frpc.toml 的 pt-cookie 穿透"
+        say "移除 frpc.toml 的 pt-cookie 穿透 (需要 sudo 密码重启 frpc)"
         if [ "$DRY_RUN" = "1" ]; then
             echo "  [dry-run] 从 $FRPC_TOML 删除 pt-cookie 穿透块"
         else
@@ -96,7 +111,8 @@ if [ "$PURGE" = "1" ]; then
 
     # 3.2 删除日志与 cookie 数据
     say "删除日志与 cookie 数据"
-    for f in "$PROJECT_ROOT/data/checkin.log" "$PROJECT_ROOT/data/cookie-server.log"; do
+    for f in "$PROJECT_ROOT/data/checkin.log" "$PROJECT_ROOT/data/cookie-server.log" \
+             "$PROJECT_ROOT/data/dingtalk-bot.log"; do
         if [ -f "$f" ]; then
             run rm -f "$f"
             ok "已删除 $f"
